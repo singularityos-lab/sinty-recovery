@@ -1,0 +1,3 @@
+[submodule "ui/cairo/subprojects/singularity-loginui"]
+	path = ui/cairo/subprojects/singularity-loginui
+	url = https://github.com/singularityos-lab/singularity-loginui.git

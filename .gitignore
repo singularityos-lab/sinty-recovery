@@ -1,0 +1,4 @@
+/atom-recovery
+*.test
+/dist/
+/sinty-pind

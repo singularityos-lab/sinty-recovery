@@ -7,12 +7,6 @@ Type=simple
 ExecStart=/usr/libexec/sinty-pind
 Restart=on-failure
 RestartSec=10
-# root: sintykey change-pin writes the sealed blobs under /var/lib/sinty and drives
-# the TPM. It never touches user homes, so ProtectHome stays on.
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/lib/sinty /run
 
 [Install]
-WantedBy=graphical.target
+WantedBy=sysinit.target

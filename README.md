@@ -26,13 +26,6 @@ go build -o atom-recovery ./cmd/atom-recovery
 It depends on the Atom Loops library (the staging and verification pipeline and
 the deployment WAL) through its public `atom` package.
 
-## Layout
-
-- `cmd/atom-recovery` -- the agent binary.
-- `internal/recovery` -- the shared Core and the text UI.
-- `internal/wifi` -- the wpa_supplicant + udhcpc wifi driver.
-- `ui/cairo` -- the graphical recovery UI (KMS-direct, singularity-loginui).
-
 ## Local API
 
 `atom-recovery --mode serve` exposes an HTTP/1.1 API over a unix socket

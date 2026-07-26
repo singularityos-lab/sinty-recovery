@@ -30,9 +30,14 @@ func run(args []string) int {
 	espDir := fs.String("esp-dir", "/boot/efi/EFI/atom", "ESP slot directory")
 	mode := fs.String("mode", "tty", "tty (interactive console) | serve (local API for the Cairo UI)")
 	socket := fs.String("socket", "/run/atom-recovery.sock", "unix socket for --mode serve")
+	sintykeyBin := fs.String("sintykey", "sintykey", "path to the sintykey crypto CLI that owns the TPM lock bit, verity toggle and key custody")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+
+	// Wire the bootloader-unlock primitives to the real sintykey backend. Without
+	// this the seam in crypto_seam.go stays fail-closed and every unlock aborts.
+	recovery.EnableSintykeyCrypto(*sintykeyBin)
 
 	rootPub, err := os.ReadFile(*rootPubPath)
 	if err != nil {

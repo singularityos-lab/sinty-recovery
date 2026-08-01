@@ -7,6 +7,7 @@
 const std = @import("std");
 const api = @import("api.zig");
 const c = @cImport({
+    @cUndef("_FORTIFY_SOURCE");
     @cInclude("fcntl.h");
     @cInclude("unistd.h");
     @cInclude("stdlib.h");

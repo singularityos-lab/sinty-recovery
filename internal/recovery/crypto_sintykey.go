@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,8 @@ import (
 // seam one to one:
 //
 //	lock-state     -> cryptoReadLockBit
+//	verity-state   -> cryptoReadVerityOff
+//	verify-pin     -> cryptoVerifyPIN
 //	wipe-var       -> cryptoWipeVar
 //	set-unlock     -> cryptoSetUnlockBit
 //	disable-verity -> cryptoDisableVerity
@@ -27,9 +30,38 @@ func EnableSintykeyCrypto(path string) {
 		sintykeyBin = path
 	}
 	cryptoReadLockBit = sintykeyReadLockBit
+	cryptoReadVerityOff = sintykeyReadVerityOff
+	cryptoVerifyPIN = sintykeyVerifyPIN
 	cryptoWipeVar = func() error { return runSintykey("wipe-var") }
 	cryptoSetUnlockBit = func() error { return runSintykey("set-unlock") }
 	cryptoDisableVerity = func() error { return runSintykey("disable-verity") }
+}
+
+func sintykeyReadVerityOff() (bool, error) {
+	out, err := exec.Command(sintykeyBin, "verity-state").Output()
+	if err != nil {
+		return false, fmt.Errorf("sintykey verity-state: %w", err)
+	}
+	switch strings.TrimSpace(string(out)) {
+	case "verity=off":
+		return true, nil
+	case "verity=on":
+		return false, nil
+	default:
+		return false, fmt.Errorf("sintykey verity-state: invalid output")
+	}
+}
+
+func sintykeyVerifyPIN(uid int, pin string) (bool, error) {
+	cmd := exec.Command(sintykeyBin, "verify-pin", "--uid", strconv.Itoa(uid))
+	cmd.Stdin = strings.NewReader(pin + "\n")
+	if err := cmd.Run(); err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // runSintykey runs one sintykey subcommand. A nonzero exit becomes an error so the

@@ -47,7 +47,8 @@ func (t *TTY) Run(ctx context.Context) error {
 		t.printf("  2) Reinstalla Sinty (scarica)\n")
 		t.printf("  3) Ripara (torna all'ultima buona)\n")
 		t.printf("  4) Stato\n")
-		t.printf("  5) Riavvia\n")
+		t.printf("  5) Unlock bootloader (erases all data)\n")
+		t.printf("  6) Riavvia\n")
 		t.printf("  q) Esci\n")
 		choice, ok := t.prompt("> ")
 		if !ok {
@@ -63,6 +64,8 @@ func (t *TTY) Run(ctx context.Context) error {
 		case "4":
 			t.doStatus()
 		case "5":
+			t.doUnlockBootloader()
+		case "6":
 			t.printf("Riavvio...\n")
 			return reboot()
 		case "q", "Q":
@@ -71,6 +74,47 @@ func (t *TTY) Run(ctx context.Context) error {
 			t.printf("Scelta non valida.\n")
 		}
 	}
+}
+
+func (t *TTY) doUnlockBootloader() {
+	state := t.core.LockState()
+	if !state.Locked {
+		t.printf("The bootloader is already unlocked.\n")
+		return
+	}
+	if !state.UnlockArmed {
+		t.printf("Unlocking must first be allowed by the owner from the running system.\n")
+		return
+	}
+	t.printf("WARNING: this permanently erases every account, file, and setting.\n")
+	_ = exec.Command("stty", "-echo").Run()
+	pin, pinOK := t.prompt("Owner PIN> ")
+	_ = exec.Command("stty", "echo").Run()
+	t.printf("\n")
+	if !pinOK {
+		t.cancelUnlock()
+		return
+	}
+	confirm, ok := t.prompt("Type UNLOCK exactly to continue> ")
+	if !ok || confirm != "UNLOCK" {
+		t.cancelUnlock()
+		return
+	}
+	ok, msg := t.core.UnlockBootloader(confirm, pin)
+	if !ok {
+		t.printf("Unlock failed: %s\n", msg)
+		return
+	}
+	t.printf("%s\nReboot to continue.\n", msg)
+}
+
+func (t *TTY) cancelUnlock() {
+	ok, msg := t.core.ArmUnlock(false)
+	if !ok {
+		t.printf("Unlock cancellation failed: %s\n", msg)
+		return
+	}
+	t.printf("Unlock cancelled. %s\n", msg)
 }
 
 func (t *TTY) doWifi(ctx context.Context) {

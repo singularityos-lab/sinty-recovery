@@ -3,6 +3,7 @@ package recovery
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/mirkobrombin/atomloops/atom"
 	"github.com/singularityos-lab/sinty-recovery/internal/wifi"
@@ -14,6 +15,8 @@ import (
 type Config struct {
 	Iface         string // e.g. "wlan0"
 	WALPath       string
+	DataDir       string // mounted atom-data root; required by destructive recovery
+	RequireMount  bool   // require DataDir to be a distinct mounted filesystem
 	ManifestURL   string
 	RevocationURL string
 	RootPub       []byte // the recovery image's baked-in ROOT public key
@@ -24,8 +27,9 @@ type Config struct {
 // fallback (in-process) and the Cairo UI (over the local HTTP API) both drive
 // these methods, so the two UIs can never drift in behavior.
 type Core struct {
-	cfg  Config
-	wifi *wifi.Client
+	cfg    Config
+	wifi   *wifi.Client
+	lockMu sync.Mutex
 }
 
 // NewCore builds the recovery core for the given config.

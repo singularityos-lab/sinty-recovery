@@ -4,10 +4,7 @@
 // in (drop the C sources once loginui itself is Zig).
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
+fn uiModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
     const mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -18,8 +15,8 @@ pub fn build(b: *std.Build) void {
     // KMS + Cairo + input, plus loginui's own deps (pangocairo, gdk-pixbuf,
     // wayland-client) since we compile its C sources into this exe.
     for ([_][]const u8{
-        "cairo",         "pangocairo", "gdk-pixbuf-2.0", "wayland-client",
-        "libdrm",        "libinput",   "libudev",        "xkbcommon",
+        "cairo",  "pangocairo", "gdk-pixbuf-2.0", "wayland-client",
+        "libdrm", "libinput",   "libudev",        "xkbcommon",
     }) |lib|
         mod.linkSystemLibrary(lib, .{});
 
@@ -37,10 +34,20 @@ pub fn build(b: *std.Build) void {
         },
         .flags = &.{"-std=c11"},
     });
+    return mod;
+}
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
         .name = "sinty-recovery-ui",
-        .root_module = mod,
+        .root_module = uiModule(b, target, optimize),
     });
     b.installArtifact(exe);
+
+    const tests = b.addTest(.{ .root_module = uiModule(b, target, optimize) });
+    const run_tests = b.addRunArtifact(tests);
+    b.step("test", "Run the recovery UI tests").dependOn(&run_tests.step);
 }

@@ -15,6 +15,8 @@ func writeFakeSintykey(t *testing.T) string {
 	script := "#!/bin/sh\n" +
 		"case \"$1\" in\n" +
 		"  lock-state) printf 'locked=%s\\nunlock_count=%s\\n' \"${FAKE_LOCKED:-false}\" \"${FAKE_COUNT:-0}\"; exit \"${FAKE_LS_EXIT:-0}\";;\n" +
+		"  verity-state) printf 'verity=%s\\n' \"${FAKE_VERITY:-off}\"; exit \"${FAKE_VS_EXIT:-0}\";;\n" +
+		"  verify-pin) IFS= read -r pin; [ \"$pin\" = \"${FAKE_PIN:-1234}\" ];;\n" +
 		"  wipe-var|set-unlock|disable-verity) exit \"${FAKE_PRIM_EXIT:-0}\";;\n" +
 		"  *) exit 0;;\n" +
 		"esac\n"
@@ -28,10 +30,38 @@ func writeFakeSintykey(t *testing.T) string {
 // does not leak into other tests in the package.
 func restoreSeam(t *testing.T) {
 	t.Helper()
-	rb, wv, su, dv, bin := cryptoReadLockBit, cryptoWipeVar, cryptoSetUnlockBit, cryptoDisableVerity, sintykeyBin
+	rb, rv, vp, wv, su, dv, bin := cryptoReadLockBit, cryptoReadVerityOff, cryptoVerifyPIN, cryptoWipeVar, cryptoSetUnlockBit, cryptoDisableVerity, sintykeyBin
 	t.Cleanup(func() {
-		cryptoReadLockBit, cryptoWipeVar, cryptoSetUnlockBit, cryptoDisableVerity, sintykeyBin = rb, wv, su, dv, bin
+		cryptoReadLockBit, cryptoReadVerityOff, cryptoVerifyPIN, cryptoWipeVar, cryptoSetUnlockBit, cryptoDisableVerity, sintykeyBin = rb, rv, vp, wv, su, dv, bin
 	})
+}
+
+func TestSintykeyReadVerityOff(t *testing.T) {
+	restoreSeam(t)
+	EnableSintykeyCrypto(writeFakeSintykey(t))
+	t.Setenv("FAKE_VERITY", "off")
+	off, err := cryptoReadVerityOff()
+	if err != nil || !off {
+		t.Fatalf("want (true,nil), got (%v,%v)", off, err)
+	}
+	t.Setenv("FAKE_VERITY", "on")
+	off, err = cryptoReadVerityOff()
+	if err != nil || off {
+		t.Fatalf("want (false,nil), got (%v,%v)", off, err)
+	}
+}
+
+func TestSintykeyVerifyPIN(t *testing.T) {
+	restoreSeam(t)
+	EnableSintykeyCrypto(writeFakeSintykey(t))
+	ok, err := cryptoVerifyPIN(1000, "1234")
+	if err != nil || !ok {
+		t.Fatalf("right PIN: want (true,nil), got (%v,%v)", ok, err)
+	}
+	ok, err = cryptoVerifyPIN(1000, "wrong")
+	if err != nil || ok {
+		t.Fatalf("wrong PIN: want (false,nil), got (%v,%v)", ok, err)
+	}
 }
 
 func TestSintykeyReadLockBit_Unlocked(t *testing.T) {

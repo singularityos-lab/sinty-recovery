@@ -22,7 +22,8 @@ func main() { os.Exit(run(os.Args[1:])) }
 func run(args []string) int {
 	fs := flag.NewFlagSet("atom-recovery", flag.ContinueOnError)
 	iface := fs.String("iface", "wlan0", "wireless interface to bring up")
-	wal := fs.String("wal", "/var/lib/atom/deployment.json", "deployment WAL path")
+	wal := fs.String("wal", "/boot/rootfs/deployment.json", "deployment WAL path")
+	dataDir := fs.String("data-dir", "/var", "mounted atom-data root for destructive recovery")
 	manifestURL := fs.String("manifest-url", "", "signed manifest URL on the update server")
 	revocationURL := fs.String("revocation-url", "", "revocation list URL (optional)")
 	rootPubPath := fs.String("root-pub", "/etc/atom/root.pub", "the recovery image's embedded ROOT public key")
@@ -30,6 +31,9 @@ func run(args []string) int {
 	espDir := fs.String("esp-dir", "/boot/efi/EFI/atom", "ESP slot directory")
 	mode := fs.String("mode", "tty", "tty (interactive console) | serve (local API for the Cairo UI)")
 	socket := fs.String("socket", "/run/atom-recovery.sock", "unix socket for --mode serve")
+	runtime := fs.Bool("runtime", false, "limit serve mode to owner-authenticated unlock policy controls")
+	ownerUID := fs.Int("owner-uid", -1, "fixed owner uid for runtime PIN checks (default: unix peer uid)")
+	socketGroup := fs.String("socket-group", "", "group allowed to access the runtime policy socket")
 	sintykeyBin := fs.String("sintykey", "sintykey", "path to the sintykey crypto CLI that owns the TPM lock bit, verity toggle and key custody")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -48,6 +52,8 @@ func run(args []string) int {
 	core := recovery.NewCore(recovery.Config{
 		Iface:         *iface,
 		WALPath:       *wal,
+		DataDir:       *dataDir,
+		RequireMount:  true,
 		ManifestURL:   *manifestURL,
 		RevocationURL: *revocationURL,
 		RootPub:       rootPub,
@@ -65,7 +71,12 @@ func run(args []string) int {
 		}
 		return 0
 	case "serve":
-		if err := recovery.Serve(ctx, core, *socket); err != nil {
+		policy := recovery.ServePolicy{}
+		if *runtime {
+			policy.Handler = recovery.HandlerPolicy{Runtime: true, OwnerUID: *ownerUID}
+			policy.SocketGroup = *socketGroup
+		}
+		if err := recovery.ServeWithPolicy(ctx, core, *socket, policy); err != nil {
 			fmt.Fprintln(os.Stderr, "atom-recovery:", err)
 			return 1
 		}

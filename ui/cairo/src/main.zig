@@ -640,6 +640,7 @@ fn handle(e: Ev) void {
                     setz(&toast, "Enter the owner's PIN before continuing.");
                     return;
                 }
+                toast[0] = 0;
                 unlock_len = 0;
                 unlock_txt[0] = 0;
                 osk_shift = true;
@@ -677,6 +678,7 @@ fn handle(e: Ev) void {
                 std.crypto.secureZero(u8, unlock_pin[0..]);
                 unlock_pin_len = 0;
                 if (ok) {
+                    toast[0] = 0;
                     screen = .progress;
                 } else {
                     if (msg[0] != 0) setz(&toast, std.mem.sliceTo(&msg, 0)) else setz(&toast, "The device refused the unlock request. Nothing was changed.");
@@ -912,8 +914,10 @@ test "armed and locked: menu reaches warning, PIN, then confirmation" {
     handle(.enter);
     try testing.expectEqual(Screen.unlock_pin, screen);
     tType("1234");
+    setz(&toast, "Incorrect PIN. Nothing was changed.");
     handle(.connectk);
     try testing.expectEqual(Screen.unlock_confirm, screen);
+    try testing.expectEqualStrings("", std.mem.sliceTo(&toast, 0));
     try testing.expectEqual(@as(usize, 0), api.unlock_call_count);
 }
 
@@ -983,9 +987,11 @@ test "exact confirmation text: F2 reaches the agent" {
     tReset();
     tReachConfirm();
     tType("UNLOCK");
+    setz(&toast, "Incorrect PIN. Nothing was changed.");
     handle(.connectk);
     try testing.expectEqual(@as(usize, 1), api.unlock_call_count);
     try testing.expectEqual(Screen.progress, screen);
+    try testing.expectEqualStrings("", std.mem.sliceTo(&toast, 0));
 }
 
 test "already unlocked: menu does not offer unlock" {

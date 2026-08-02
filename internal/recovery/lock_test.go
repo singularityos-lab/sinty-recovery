@@ -355,6 +355,7 @@ func TestDataWipePreservesOnlyBootSlotsAndMarker(t *testing.T) {
 	for path, content := range map[string]string{
 		"boot/rootfs/rootfs-active.erofs": "root",
 		"boot/rootfs/hidden":              "secret",
+		"boot/efi/EFI/atom/state":         "mounted-esp",
 		"boot/firmware/private":           "secret",
 		"boot/secret":                     "secret",
 		"home/owner/document":             "secret",
@@ -388,7 +389,7 @@ func TestDataWipePreservesOnlyBootSlotsAndMarker(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, "lib")); !os.IsNotExist(err) {
 		t.Fatal("key custody directory survived final wipe")
 	}
-	for _, kept := range []string{dataMarker, installIDMarker, "boot/rootfs/rootfs-active.erofs"} {
+	for _, kept := range []string{dataMarker, installIDMarker, "boot/efi/EFI/atom/state", "boot/rootfs/rootfs-active.erofs"} {
 		if _, err := os.Stat(filepath.Join(data, kept)); err != nil {
 			t.Fatalf("preserved %s missing: %v", kept, err)
 		}

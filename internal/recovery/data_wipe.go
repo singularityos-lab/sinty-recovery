@@ -137,7 +137,10 @@ func removeChildrenExcept(dir string, keep map[string]bool) error {
 
 func (c *Core) scrubBootArtifacts() error {
 	boot := filepath.Join(c.cfg.DataDir, "boot")
-	if err := removeChildrenExcept(boot, map[string]bool{"rootfs": true}); err != nil {
+	if err := removeChildrenExcept(boot, map[string]bool{
+		"efi":    true,
+		"rootfs": true,
+	}); err != nil {
 		return fmt.Errorf("scrub boot directory: %w", err)
 	}
 	rootfs := filepath.Join(boot, "rootfs")

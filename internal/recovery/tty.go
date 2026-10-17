@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
+	"unsafe"
 )
 
 // TTY is the interactive text-mode recovery UI: the fallback that works with no
@@ -87,9 +88,9 @@ func (t *TTY) doUnlockBootloader() {
 		return
 	}
 	t.printf("WARNING: this permanently erases every account, file, and setting.\n")
-	_ = exec.Command("stty", "-echo").Run()
+	setEcho(false)
 	pin, pinOK := t.prompt("Owner PIN> ")
-	_ = exec.Command("stty", "echo").Run()
+	setEcho(true)
 	t.printf("\n")
 	if !pinOK {
 		t.cancelUnlock()
@@ -192,4 +193,26 @@ func (t *TTY) doStatus() {
 		s.BootAttempts, s.Recovery, s.Kernelcache, s.SecurityLevel)
 }
 
-func reboot() error { return exec.Command("reboot").Run() }
+func reboot() error { return Reboot() }
+
+// Reboot syncs the disks and restarts the machine. Recovery runs as the
+// initramfs init, so there is no service manager to ask.
+func Reboot() error {
+	syscall.Sync()
+	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+// setEcho turns terminal echo of the console on or off, so a PIN is not
+// shown while it is typed.
+func setEcho(on bool) {
+	var t syscall.Termios
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, 0, syscall.TCGETS, uintptr(unsafe.Pointer(&t))); errno != 0 {
+		return
+	}
+	if on {
+		t.Lflag |= syscall.ECHO
+	} else {
+		t.Lflag &^= syscall.ECHO
+	}
+	syscall.Syscall(syscall.SYS_IOCTL, 0, syscall.TCSETS, uintptr(unsafe.Pointer(&t)))
+}

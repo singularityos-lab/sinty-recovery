@@ -29,7 +29,7 @@ func run(args []string) int {
 	rootPubPath := fs.String("root-pub", "/etc/atom/root.pub", "the recovery image's embedded ROOT public key")
 	rootfsDir := fs.String("rootfs-dir", "/boot/rootfs", "rootfs slot directory")
 	espDir := fs.String("esp-dir", "/boot/efi/EFI/atom", "ESP slot directory")
-	mode := fs.String("mode", "tty", "tty (interactive console) | serve (local API for the Cairo UI)")
+	mode := fs.String("mode", "tty", "tty (interactive console) | serve (local API for the Cairo UI) | reboot")
 	socket := fs.String("socket", "/run/atom-recovery.sock", "unix socket for --mode serve")
 	runtime := fs.Bool("runtime", false, "limit serve mode to owner-authenticated unlock policy controls")
 	ownerUID := fs.Int("owner-uid", -1, "fixed owner uid for runtime PIN checks (default: unix peer uid)")
@@ -37,6 +37,13 @@ func run(args []string) int {
 	sintykeyBin := fs.String("sintykey", "sintykey", "path to the sintykey crypto CLI that owns the TPM lock bit, verity toggle and key custody")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *mode == "reboot" {
+		if err := recovery.Reboot(); err != nil {
+			fmt.Fprintln(os.Stderr, "atom-recovery:", err)
+			return 1
+		}
+		return 0
 	}
 
 	// Wire the bootloader-unlock primitives to the real sintykey backend. Without

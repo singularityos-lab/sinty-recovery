@@ -1,15 +1,15 @@
 // Package wifi brings up a wireless link with no NetworkManager and no desktop,
 // by talking wpa_supplicant's text ctrl_iface over a unix datagram socket (SCAN,
-// SCAN_RESULTS, ADD_NETWORK, SET_NETWORK, SELECT_NETWORK, STATUS) and running
-// udhcpc for the lease.
+// SCAN_RESULTS, ADD_NETWORK, SET_NETWORK, SELECT_NETWORK, STATUS) and taking
+// the lease with the dhcp package.
 package wifi
 
 import (
 	"context"
 	"fmt"
+	"github.com/singularityos-lab/sinty-recovery/internal/dhcp"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,7 +28,6 @@ type Network struct {
 type Client struct {
 	iface    string
 	ctrlPath string // e.g. /run/wpa_supplicant/wlan0
-	dhcp     string // udhcpc binary
 	// injectable for tests
 	runDHCP func(ctx context.Context, iface string) error
 }
@@ -39,9 +38,8 @@ func New(iface string) *Client {
 	c := &Client{
 		iface:    iface,
 		ctrlPath: filepath.Join("/run/wpa_supplicant", iface),
-		dhcp:     "udhcpc",
 	}
-	c.runDHCP = c.udhcpc
+	c.runDHCP = lease
 	return c
 }
 
@@ -209,14 +207,15 @@ func statusField(status, key string) string {
 	return ""
 }
 
-// udhcpc runs the busybox DHCP client for one lease. -q exits once the lease is
-// obtained; -f keeps it foreground until then. Note: the udhcpc default script
-// must be `ip`-based, not ifconfig (which is absent) -- the recovery ships that.
-func (c *Client) udhcpc(ctx context.Context, iface string) error {
-	cmd := exec.CommandContext(ctx, c.dhcp, "-i", iface, "-f", "-q", "-n")
-	out, err := cmd.CombinedOutput()
+// lease obtains an IPv4 lease for iface and configures the address, the
+// default route and the name servers.
+func lease(ctx context.Context, iface string) error {
+	l, err := dhcp.Acquire(ctx, iface)
 	if err != nil {
-		return fmt.Errorf("wifi: dhcp on %s failed: %w (%s)", iface, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("wifi: %w", err)
+	}
+	if err := dhcp.Configure(iface, l, "/etc/resolv.conf"); err != nil {
+		return fmt.Errorf("wifi: %w", err)
 	}
 	return nil
 }

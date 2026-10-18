@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -198,7 +199,15 @@ func reboot() error { return Reboot() }
 // Reboot syncs the disks and restarts the machine. Recovery runs as the
 // initramfs init, so there is no service manager to ask.
 func Reboot() error {
-	syscall.Sync()
+	synced := make(chan struct{})
+	go func() {
+		syscall.Sync()
+		close(synced)
+	}()
+	select {
+	case <-synced:
+	case <-time.After(10 * time.Second):
+	}
 	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 

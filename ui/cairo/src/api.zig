@@ -322,6 +322,9 @@ pub fn reinstall() bool {
 pub fn repair() bool {
     return post("/repair");
 }
+pub fn repairLoader() bool {
+    return post("/repair-loader");
+}
 pub fn rollback() bool {
     return post("/rollback");
 }

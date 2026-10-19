@@ -148,7 +148,7 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 		})
 	})
 
-	// POST /reinstall|/repair|/rollback {} -> {"started":bool}  (async; follow via /status)
+	// POST /reinstall|/repair|/rollback|/repair-loader {} -> {"started":bool}  (async; follow via /status)
 	start := func(verb string, fn func(context.Context) (string, error)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if ui.working() {
@@ -170,6 +170,7 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 	mux.HandleFunc("POST /reinstall", start("Reinstalling", core.Reinstall))
 	mux.HandleFunc("POST /repair", start("Repairing", func(context.Context) (string, error) { return core.Repair() }))
 	mux.HandleFunc("POST /rollback", start("Rolling back", func(context.Context) (string, error) { return core.Rollback() }))
+	mux.HandleFunc("POST /repair-loader", start("Repairing the boot loader", func(context.Context) (string, error) { return core.RepairLoader() }))
 
 	// GET /lock-state -> {"locked","unlock_armed","unlock_count"}  (fail-closed read)
 	mux.HandleFunc("GET /lock-state", func(w http.ResponseWriter, r *http.Request) {

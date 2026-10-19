@@ -70,7 +70,7 @@ fn setz(dst: []u8, src: []const u8) void {
 const Screen = enum { menu, wifi, password, progress, unlock_warn, unlock_pin, unlock_confirm, unlock_blocked, sdb_pair };
 var screen: Screen = .menu;
 
-const menu_items = [_][*:0]const u8{ "Reinstall Sinty", "Repair", "Unlock bootloader" };
+const menu_items = [_][*:0]const u8{ "Reinstall Sinty", "Repair", "Repair boot loader", "Unlock bootloader" };
 var menu_sel: usize = 0;
 
 var nets: [64]api.Network = undefined;
@@ -545,6 +545,8 @@ fn handle(e: Ev) void {
                 } else if (menu_sel == 1) {
                     if (api.repair()) screen = .progress else setz(&toast, "Nothing to repair to; a reinstall is needed.");
                 } else if (menu_sel == 2) {
+                    if (api.repairLoader()) screen = .progress else setz(&toast, "The boot loader repair could not start.");
+                } else if (menu_sel == 3) {
                     unlock_len = 0;
                     unlock_txt[0] = 0;
                     std.crypto.secureZero(u8, unlock_pin[0..]);

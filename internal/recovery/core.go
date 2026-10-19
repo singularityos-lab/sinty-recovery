@@ -3,6 +3,7 @@ package recovery
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/mirkobrombin/atomloops/atom"
@@ -20,6 +21,8 @@ type Config struct {
 	ManifestURL   string
 	RevocationURL string
 	RootPub       []byte // the recovery image's baked-in ROOT public key
+	LoaderImage   string // signed boot loader carried by the recovery image
+	LoaderSig     string
 	Dirs          atom.StageDirs
 }
 
@@ -73,6 +76,20 @@ func (c *Core) Status() (Status, error) {
 		Kernelcache:   d.Kernelcache.CurrentVersion,
 		SecurityLevel: d.Security.Level,
 	}, nil
+}
+
+// RepairLoader reinstalls the signed boot loader carried by the recovery image,
+// verified against the ESP signing cert chained to the baked-in ROOT key.
+func (c *Core) RepairLoader() (string, error) {
+	img, err := os.ReadFile(c.cfg.LoaderImage)
+	if err != nil {
+		return "", fmt.Errorf("this recovery image carries no boot loader: %w", err)
+	}
+	sig, err := os.ReadFile(c.cfg.LoaderSig)
+	if err != nil {
+		return "", fmt.Errorf("this recovery image carries no boot loader signature: %w", err)
+	}
+	return atom.RepairLoader(c.cfg.Dirs, img, sig, c.cfg.RootPub)
 }
 
 // Reinstall fetches, verifies and stages a fresh signed image over the network.

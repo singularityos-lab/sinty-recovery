@@ -29,6 +29,8 @@ func run(args []string) int {
 	rootPubPath := fs.String("root-pub", "/etc/atom/root.pub", "the recovery image's embedded ROOT public key")
 	rootfsDir := fs.String("rootfs-dir", "/boot/rootfs", "rootfs slot directory")
 	espDir := fs.String("esp-dir", "/boot/efi/EFI/atom", "ESP slot directory")
+	loaderImage := fs.String("loader-image", "/usr/lib/atomloops/loader.efi", "signed boot loader used to repair the ESP")
+	loaderSig := fs.String("loader-sig", "", "signature of --loader-image (default: the image path plus .sig)")
 	mode := fs.String("mode", "tty", "tty (interactive console) | serve (local API for the Cairo UI) | reboot")
 	socket := fs.String("socket", "/run/atom-recovery.sock", "unix socket for --mode serve")
 	runtime := fs.Bool("runtime", false, "limit serve mode to owner-authenticated unlock policy controls")
@@ -56,6 +58,10 @@ func run(args []string) int {
 		return 1
 	}
 
+	if *loaderSig == "" {
+		*loaderSig = *loaderImage + ".sig"
+	}
+
 	core := recovery.NewCore(recovery.Config{
 		Iface:         *iface,
 		WALPath:       *wal,
@@ -64,6 +70,8 @@ func run(args []string) int {
 		ManifestURL:   *manifestURL,
 		RevocationURL: *revocationURL,
 		RootPub:       rootPub,
+		LoaderImage:   *loaderImage,
+		LoaderSig:     *loaderSig,
 		Dirs:          atom.StageDirs{Rootfs: *rootfsDir, ESP: *espDir},
 	})
 

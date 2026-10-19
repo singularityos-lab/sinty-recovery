@@ -51,6 +51,7 @@ func (t *TTY) Run(ctx context.Context) error {
 		t.printf("  4) Stato\n")
 		t.printf("  5) Unlock bootloader (erases all data)\n")
 		t.printf("  6) Riavvia\n")
+		t.printf("  7) Ripara il loader di avvio\n")
 		t.printf("  q) Esci\n")
 		choice, ok := t.prompt("> ")
 		if !ok {
@@ -70,6 +71,8 @@ func (t *TTY) Run(ctx context.Context) error {
 		case "6":
 			t.printf("Riavvio...\n")
 			return reboot()
+		case "7":
+			t.doRepairLoader()
 		case "q", "Q":
 			return nil
 		default:
@@ -177,6 +180,19 @@ func (t *TTY) doRepair() {
 	msg, err := t.core.Repair()
 	if err != nil {
 		t.printf("Ripara: %v\n", err)
+		return
+	}
+	t.printf("%s\n", msg)
+}
+
+func (t *TTY) doRepairLoader() {
+	c, ok := t.prompt("Reinstallare il loader di avvio firmato? [s/N]> ")
+	if !ok || strings.ToLower(c) != "s" {
+		return
+	}
+	msg, err := t.core.RepairLoader()
+	if err != nil {
+		t.printf("Ripara loader: %v\n", err)
 		return
 	}
 	t.printf("%s\n", msg)

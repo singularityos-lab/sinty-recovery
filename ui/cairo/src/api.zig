@@ -42,6 +42,20 @@ pub const PairingState = struct {
     }
 };
 
+pub const DataState = struct {
+    broken: [64]u8 = std.mem.zeroes([64]u8),
+    verdict: [24]u8 = std.mem.zeroes([24]u8),
+    fixed: bool = false,
+    pin: bool = false,
+
+    pub fn isBroken(self: *const DataState) bool {
+        return self.broken[0] != 0;
+    }
+    pub fn is(self: *const DataState, v: []const u8) bool {
+        return std.mem.eql(u8, std.mem.sliceTo(&self.verdict, 0), v);
+    }
+};
+
 pub const Status = struct {
     online: bool = false,
     current: [64]u8 = std.mem.zeroes([64]u8),
@@ -70,6 +84,15 @@ pub fn open(addr: ?[]const u8) void {
         break :blk (s.len > 0 and !std.mem.eql(u8, s, "0"));
     } else false;
     mk_sdb_active = false;
+    mk_data = .{};
+    if (std.c.getenv("RECOVERY_MOCK_DATA")) |m| {
+        const v = std.mem.span(m);
+        if (v.len > 0) {
+            setz(&mk_data.broken, "/dev/nvme0n1p2");
+            mk_data_damage = if (std.mem.eql(u8, v, "accounting")) "accounting" else "needs-user";
+            mk_data.pin = !std.mem.eql(u8, v, "nopin");
+        }
+    }
     if (addr) |a| {
         @memcpy(sock_path_buf[0..a.len], a);
         sock_path = sock_path_buf[0..a.len];
@@ -217,6 +240,8 @@ var mk_armed = false;
 var mk_unlock_count: i32 = 0;
 var mk_sdb_active = false;
 var mk_sdb_pending = false;
+var mk_data: DataState = .{};
+var mk_data_damage: []const u8 = "needs-user";
 
 const fake = [_]struct { s: []const u8, sig: i32, sec: bool }{
     .{ .s = "Sinty-Home", .sig = -48, .sec = true },
@@ -476,4 +501,103 @@ pub fn unlockBootloader(confirm: []const u8, pin: []const u8, msg: []u8) bool {
     const b = http("POST", "/unlock-bootloader", body, &buf) orelse return false;
     jStr(b, "message", msg);
     return jBool(b, "ok", false);
+}
+
+pub var data_repair_count: usize = 0;
+
+pub fn dataGet(out: *DataState) bool {
+    out.* = .{};
+    if (use_mock) {
+        out.* = mk_data;
+        return true;
+    }
+    var buf: [1024]u8 = undefined;
+    const b = http("GET", "/data", null, &buf) orelse return false;
+    if (std.mem.indexOf(u8, b, "\"broken\"") == null) return false;
+    jStr(b, "broken", &out.broken);
+    jStr(b, "verdict", &out.verdict);
+    out.fixed = jBool(b, "fixed", false);
+    out.pin = jBool(b, "pin", false);
+    return true;
+}
+
+fn started(path: []const u8, body: []const u8) bool {
+    var buf: [512]u8 = undefined;
+    const b = http("POST", path, body, &buf) orelse return false;
+    return jBool(b, "started", false);
+}
+
+pub fn dataCheck() bool {
+    if (use_mock) {
+        if (!mk_data.fixed) setz(&mk_data.verdict, mk_data_damage);
+        _ = startWork();
+        mk_ticks = 90;
+        return true;
+    }
+    return started("/data-check", "{}");
+}
+
+pub fn dataRepair(pin: []const u8, confirm: []const u8) bool {
+    data_repair_count += 1;
+    if (use_mock) {
+        const risky = std.mem.eql(u8, std.mem.sliceTo(&mk_data.verdict, 0), "needs-user");
+        if (risky and (pin.len < 4 or !std.mem.eql(u8, confirm, "REPAIR"))) {
+            mk_state = .failed;
+            setz(&mk_msg, "Incorrect PIN. Nothing was changed.");
+            return true;
+        }
+        mk_data.fixed = true;
+        setz(&mk_data.verdict, "clean");
+        return startWork();
+    }
+    if (pin.len > 256 or confirm.len > 16) return false;
+    var esc: [520]u8 = undefined;
+    defer std.crypto.secureZero(u8, esc[0..]);
+    var n: usize = 0;
+    for (pin) |ch| {
+        if (ch < 0x20) return false;
+        if (ch == '"' or ch == '\\') {
+            esc[n] = '\\';
+            n += 1;
+        }
+        esc[n] = ch;
+        n += 1;
+    }
+    for (confirm) |ch| {
+        if (ch < 0x20 or ch > 0x7e or ch == '"' or ch == '\\') return false;
+    }
+    var bbuf: [640]u8 = undefined;
+    defer std.crypto.secureZero(u8, bbuf[0..]);
+    const body = std.fmt.bufPrint(&bbuf, "{{\"pin\":\"{s}\",\"confirm\":\"{s}\"}}", .{ esc[0..n], confirm }) catch return false;
+    return started("/data-repair", body);
+}
+
+fn dataSync(path: []const u8, msg: []u8) bool {
+    var buf: [1024]u8 = undefined;
+    const b = http("POST", path, "{}", &buf) orelse {
+        setz(msg, "Sinty Recovery did not answer.");
+        return false;
+    };
+    jStr(b, "message", msg);
+    return jBool(b, "ok", false);
+}
+
+pub fn dataReport(msg: []u8) bool {
+    if (use_mock) {
+        setz(msg, "The report was saved to the EFI partition as SINTYRECOVERY-20261106-235900.txt.");
+        return true;
+    }
+    return dataSync("/data-report", msg);
+}
+
+pub fn dataStart(msg: []u8) bool {
+    if (use_mock) {
+        if (mk_data.fixed or std.mem.eql(u8, std.mem.sliceTo(&mk_data.verdict, 0), "clean")) {
+            setz(msg, "Sinty OS will start at the next boot.");
+            return true;
+        }
+        setz(msg, "The data partition still needs a repair.");
+        return false;
+    }
+    return dataSync("/data-start", msg);
 }

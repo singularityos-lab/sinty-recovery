@@ -67,11 +67,20 @@ fn setz(dst: []u8, src: []const u8) void {
 
 // ── state ──
 
-const Screen = enum { menu, wifi, password, progress, unlock_warn, unlock_pin, unlock_confirm, unlock_blocked, sdb_pair };
+const Screen = enum { menu, wifi, password, progress, unlock_warn, unlock_pin, unlock_confirm, unlock_blocked, sdb_pair, data_menu, data_pin, data_confirm };
 var screen: Screen = .menu;
 
 const menu_items = [_][*:0]const u8{ "Reinstall Sinty", "Repair", "Repair boot loader", "Unlock bootloader" };
 var menu_sel: usize = 0;
+
+const data_items = [_][*:0]const u8{ "Repair the data partition", "Check again", "Save a report", "Start Sinty OS", "More recovery options" };
+var data_sel: usize = 0;
+var data: api.DataState = .{};
+const repair_word = "REPAIR";
+
+fn home() Screen {
+    return if (data.isBroken()) .data_menu else .menu;
+}
 
 var nets: [64]api.Network = undefined;
 var net_n: usize = 0;
@@ -119,15 +128,12 @@ fn header(cr: ?*c.cairo_t, title: [*:0]const u8) void {
     if (toast[0] != 0) text(cr, "16", cstr(&toast), fw() / 2, fh() - 54, 1, acc);
 }
 
-fn drawMenu(cr: ?*c.cairo_t) void {
-    header(cr, if (status.online) "Connected. Choose an action." else "Not connected. Reinstall needs wifi.");
+fn drawItems(cr: ?*c.cairo_t, items: []const [*:0]const u8, sel: usize, top: f64, bh: f64, gap: f64) f64 {
     const bw: f64 = 520;
-    const bh: f64 = 64;
     const x = (fw() - bw) / 2;
-    var y = fh() / 2 - 120;
-    var i: usize = 0;
-    while (i < menu_items.len) : (i += 1) {
-        const on = i == menu_sel;
+    var y = top;
+    for (items, 0..) |item, i| {
+        const on = i == sel;
         fill(cr, x, y, bw, bh, if (on) acc else fg, if (on) 0.22 else 0.06);
         if (on) {
             c.loginui_rounded_rect(cr, x, y, bw, bh, 10);
@@ -135,9 +141,15 @@ fn drawMenu(cr: ?*c.cairo_t) void {
             c.cairo_set_line_width(cr, 2);
             c.cairo_stroke(cr);
         }
-        textMid(cr, "22", menu_items[i], x + 28, y, bh, 0, fg);
-        y += bh + 18;
+        textMid(cr, "22", item, x + 28, y, bh, 0, fg);
+        y += bh + gap;
     }
+    return y;
+}
+
+fn drawMenu(cr: ?*c.cairo_t) void {
+    header(cr, if (status.online) "Connected. Choose an action." else "Not connected. Reinstall needs wifi.");
+    const y = drawItems(cr, &menu_items, menu_sel, fh() / 2 - 120, 64, 18);
     const lock_line: [*:0]const u8 = if (!lock_read)
         "Bootloader state unavailable."
     else if (lock.locked)
@@ -352,6 +364,67 @@ fn drawSdbPair(cr: ?*c.cairo_t) void {
     text(cr, "16", "Esc cancels pairing and returns to the menu. Cancelling is safe and grants nothing.", fw() / 2, fy + 188, 1, dim);
 }
 
+fn dataCard(cr: ?*c.cairo_t, col: [3]f64, title: [*:0]const u8, lines: []const [*:0]const u8) void {
+    const bw: f64 = @min(900, fw() - 64);
+    const x = (fw() - bw) / 2;
+    const y: f64 = 206;
+    fill(cr, x, y, bw, 150, col, 0.12);
+    text(cr, "bold 24", title, x + 32, y + 26, 0, if (col[0] == fg[0]) fg else col);
+    var ly = y + 76;
+    for (lines) |ln| {
+        text(cr, "18", ln, x + 32, ly, 0, fg);
+        ly += 30;
+    }
+}
+
+fn drawDataMenu(cr: ?*c.cairo_t) void {
+    header(cr, "The data partition needs attention");
+    if (status.state == .working) {
+        const msg: [*:0]const u8 = if (status.message[0] != 0) cstr(&status.message) else "Checking the data partition...";
+        dataCard(cr, fg, msg, &.{ "The check only reads the disk. Nothing is written.", "It can take a while on a large disk." });
+    } else if (data.fixed) {
+        dataCard(cr, acc, "The data partition was repaired.", &.{ "Choose Start Sinty OS to boot normally.", "Save a report to keep a record of the repair." });
+    } else if (data.verdict[0] == 0) {
+        dataCard(cr, fg, "Sinty OS could not open the data partition.", &.{ "Your files are still on it.", "Choose Check again to see what is wrong. Nothing is changed." });
+    } else if (data.is("clean")) {
+        dataCard(cr, acc, "The data partition checks clean.", &.{"Choose Start Sinty OS to boot normally."});
+    } else if (data.is("accounting")) {
+        dataCard(cr, acc, "The damage can be repaired safely.", &.{ "Only file system counters are wrong. No file is removed.", "Choose Repair the data partition." });
+    } else if (data.pin) {
+        dataCard(cr, warn, "Repairing may remove damaged files.", &.{ "Files that cannot be read back may be lost.", "The owner's PIN and the word REPAIR are asked first." });
+    } else {
+        dataCard(cr, warn, "Repairing may remove damaged files.", &.{ "The owner's PIN cannot be checked on this device.", "Save a report, then reinstall or copy the files elsewhere." });
+    }
+    _ = drawItems(cr, &data_items, data_sel, 386, 52, 12);
+}
+
+fn drawDataPin(cr: ?*c.cairo_t) void {
+    header(cr, "Confirm ownership");
+    var mask: [258]u8 = undefined;
+    var i: usize = 0;
+    while (i < unlock_pin_len and i + 1 < mask.len) : (i += 1) mask[i] = '*';
+    mask[i] = 0;
+    drawEntry(cr, @ptrCast(&mask), 200, "Enter PIN   F2 continue   Backspace del   Esc cancel");
+    text(cr, "16", "The owner's PIN is checked before the data partition is changed.", fw() / 2, fh() - 130, 1, dim);
+}
+
+fn repairMatches() bool {
+    return std.mem.eql(u8, std.mem.sliceTo(&unlock_txt, 0), repair_word);
+}
+
+fn drawDataConfirm(cr: ?*c.cairo_t) void {
+    header(cr, "Type REPAIR to confirm");
+    var shown: [34]u8 = undefined;
+    setz(&shown, std.mem.sliceTo(&unlock_txt, 0));
+    const ok = repairMatches();
+    drawEntry(cr, @ptrCast(&shown), 200, "arrows move   Enter type   Tab shift   Backspace del   Esc back");
+    const msg: [*:0]const u8 = if (ok)
+        "Press F2 to repair. Damaged files may be removed."
+    else
+        "Type the word REPAIR exactly. Nothing happens until it matches.";
+    text(cr, "18", msg, fw() / 2, fh() - 130, 1, if (ok) warn else dim);
+}
+
 fn drawProgress(cr: ?*c.cairo_t) void {
     header(cr, "Working");
     const bw: f64 = 560;
@@ -368,7 +441,7 @@ fn drawProgress(cr: ?*c.cairo_t) void {
     var pb: [16]u8 = undefined;
     const ps = std.fmt.bufPrintZ(&pb, "{d}%", .{pct}) catch "";
     text(cr, "16", ps.ptr, fw() / 2, y + 50, 1, dim);
-    if (status.state == .done) text(cr, "18", "Done. Reboot to finish.  (F12 to reboot)", fw() / 2, y + 90, 1, acc);
+    if (status.state == .done) text(cr, "18", if (data.isBroken()) "Done.  Esc to go back." else "Done. Reboot to finish.  (F12 to reboot)", fw() / 2, y + 90, 1, acc);
     if (status.state == .failed) text(cr, "18", "Failed.  Esc to go back.", fw() / 2, y + 90, 1, warn);
 }
 
@@ -383,6 +456,9 @@ fn render(cr: ?*c.cairo_t) void {
         .unlock_confirm => drawUnlockConfirm(cr),
         .unlock_blocked => drawUnlockBlocked(cr),
         .sdb_pair => drawSdbPair(cr),
+        .data_menu => drawDataMenu(cr),
+        .data_pin => drawDataPin(cr),
+        .data_confirm => drawDataConfirm(cr),
     }
 }
 
@@ -493,9 +569,9 @@ fn goPairing() void {
 const Entry = struct { buf: []u8, len: *usize };
 
 fn entry() Entry {
-    return if (screen == .unlock_confirm)
+    return if (screen == .unlock_confirm or screen == .data_confirm)
         .{ .buf = &unlock_txt, .len = &unlock_len }
-    else if (screen == .unlock_pin)
+    else if (screen == .unlock_pin or screen == .data_pin)
         .{ .buf = &unlock_pin, .len = &unlock_pin_len }
     else
         .{ .buf = &psk, .len = &psk_len };
@@ -532,9 +608,122 @@ fn oskMove(e: Ev) void {
     if (e == .char) entryPut(ev_char);
 }
 
+fn clearEntry() void {
+    unlock_len = 0;
+    unlock_txt[0] = 0;
+    std.crypto.secureZero(u8, unlock_pin[0..]);
+    unlock_pin_len = 0;
+}
+
+fn dataRefresh() void {
+    var d: api.DataState = .{};
+    if (api.dataGet(&d)) data = d;
+}
+
+fn dataRepairChosen() void {
+    if (status.state == .working) {
+        setz(&toast, "Wait for the check to finish.");
+    } else if (data.fixed) {
+        setz(&toast, "The data partition was already repaired.");
+    } else if (data.verdict[0] == 0) {
+        if (api.dataCheck()) setz(&toast, "Checking the data partition first.") else setz(&toast, "The check could not start.");
+    } else if (data.is("clean")) {
+        setz(&toast, "There is nothing to repair.");
+    } else if (data.is("accounting")) {
+        if (api.dataRepair("", "")) {
+            toast[0] = 0;
+            screen = .progress;
+        } else setz(&toast, "The repair could not start.");
+    } else if (!data.pin) {
+        setz(&toast, "The owner's PIN cannot be checked here. Nothing was changed.");
+    } else {
+        clearEntry();
+        toast[0] = 0;
+        osk_r = 0;
+        osk_c = 0;
+        osk_shift = false;
+        screen = .data_pin;
+    }
+}
+
 fn handle(e: Ev) void {
     switch (screen) {
+        .data_menu => {
+            if (e == .up) data_sel = (data_sel + data_items.len - 1) % data_items.len;
+            if (e == .down) data_sel = (data_sel + 1) % data_items.len;
+            if (e != .enter) return;
+            var msg: [160]u8 = std.mem.zeroes([160]u8);
+            switch (data_sel) {
+                0 => dataRepairChosen(),
+                1 => {
+                    if (status.state == .working) return;
+                    if (api.dataCheck()) toast[0] = 0 else setz(&toast, "The check could not start.");
+                },
+                2 => {
+                    _ = api.dataReport(&msg);
+                    setz(&toast, std.mem.sliceTo(&msg, 0));
+                },
+                3 => {
+                    if (api.dataStart(&msg)) {
+                        var t: [200]u8 = undefined;
+                        const s = std.fmt.bufPrint(&t, "{s} Press F12 to restart.", .{std.mem.sliceTo(&msg, 0)}) catch "Press F12 to restart.";
+                        setz(&toast, s);
+                    } else setz(&toast, std.mem.sliceTo(&msg, 0));
+                },
+                else => {
+                    toast[0] = 0;
+                    screen = .menu;
+                },
+            }
+        },
+        .data_pin => {
+            if (e == .back) {
+                clearEntry();
+                screen = .data_menu;
+                return;
+            }
+            oskMove(e);
+            if (e == .connectk) {
+                if (unlock_pin_len < 4) {
+                    setz(&toast, "Enter the owner's PIN before continuing.");
+                    return;
+                }
+                toast[0] = 0;
+                unlock_len = 0;
+                unlock_txt[0] = 0;
+                osk_shift = true;
+                screen = .data_confirm;
+            }
+        },
+        .data_confirm => {
+            if (e == .back) {
+                unlock_len = 0;
+                unlock_txt[0] = 0;
+                screen = .data_pin;
+                return;
+            }
+            oskMove(e);
+            if (e == .connectk) {
+                if (!repairMatches()) {
+                    setz(&toast, "Confirmation text does not match. Nothing was changed.");
+                    return;
+                }
+                const ok = api.dataRepair(std.mem.sliceTo(&unlock_pin, 0), std.mem.sliceTo(&unlock_txt, 0));
+                clearEntry();
+                if (ok) {
+                    toast[0] = 0;
+                    screen = .progress;
+                } else {
+                    setz(&toast, "The repair could not start. Nothing was changed.");
+                    screen = .data_menu;
+                }
+            }
+        },
         .menu => {
+            if (e == .back and data.isBroken()) {
+                screen = .data_menu;
+                return;
+            }
             if (e == .up) menu_sel = (menu_sel + menu_items.len - 1) % menu_items.len;
             if (e == .down) menu_sel = (menu_sel + 1) % menu_items.len;
             if (e == .enter) {
@@ -607,7 +796,10 @@ fn handle(e: Ev) void {
             }
         },
         .progress => {
-            if (e == .back and (status.state == .failed or status.state == .done)) screen = .menu;
+            if (e == .back and (status.state == .failed or status.state == .done)) {
+                if (data.isBroken()) dataRefresh();
+                screen = home();
+            }
         },
         .unlock_warn => {
             if (e == .back) {
@@ -830,7 +1022,39 @@ fn preview() void {
     setz(&pair_note, "The pairing state could not be read, so no code is shown.");
     png("/tmp/rc-zig-12-sdb-unreadable.png");
 
-    std.debug.print("wrote {d} Zig-rendered recovery screens to /tmp/rc-zig-*.png\n", .{screens.len + 5});
+    pair_note[0] = 0;
+    toast[0] = 0;
+    setz(&data.broken, "/dev/nvme0n1p2");
+    data.pin = true;
+    data_sel = 0;
+    screen = .data_menu;
+    status.state = .working;
+    setz(&status.message, "Checking the data partition...");
+    png("/tmp/rc-zig-13-data-checking.png");
+    status.state = .idle;
+    png("/tmp/rc-zig-14-data-unchecked.png");
+    setz(&data.verdict, "accounting");
+    png("/tmp/rc-zig-15-data-accounting.png");
+    setz(&data.verdict, "needs-user");
+    png("/tmp/rc-zig-16-data-risky.png");
+    data.pin = false;
+    png("/tmp/rc-zig-17-data-risky-nopin.png");
+    data.pin = true;
+    unlock_pin_len = 6;
+    screen = .data_pin;
+    png("/tmp/rc-zig-18-data-pin.png");
+    setz(&unlock_txt, repair_word);
+    unlock_len = repair_word.len;
+    screen = .data_confirm;
+    png("/tmp/rc-zig-19-data-confirm.png");
+    data.fixed = true;
+    setz(&data.verdict, "clean");
+    screen = .data_menu;
+    data_sel = 3;
+    setz(&toast, "Sinty OS will start at the next boot. Press F12 to restart.");
+    png("/tmp/rc-zig-20-data-fixed.png");
+
+    std.debug.print("wrote {d} Zig-rendered recovery screens to /tmp/rc-zig-*.png\n", .{screens.len + 13});
 }
 
 // ── tests: drive the real handle() with scripted events ──
@@ -863,7 +1087,7 @@ fn tResetSdb() void {
 }
 fn tReset() void {
     screen = .menu;
-    menu_sel = 2;
+    menu_sel = 3;
     toast[0] = 0;
     block_reason[0] = 0;
     unlock_len = 0;
@@ -1142,6 +1366,107 @@ test "debug bridge: a session never survives leaving the screen" {
     try testing.expectEqual(@as(usize, 2), api.pair_begin_count);
 }
 
+fn tData(kind: [*:0]const u8) void {
+    _ = c.setenv("RECOVERY_MOCK", "1", 1);
+    _ = c.setenv("RECOVERY_MOCK_DATA", kind, 1);
+    api.open(null);
+    dataRefresh();
+    screen = home();
+    data_sel = 0;
+    toast[0] = 0;
+    clearEntry();
+    status = .{};
+    api.data_repair_count = 0;
+}
+fn tSettle() void {
+    _ = api.statusGet(&status);
+    while (status.state == .working) _ = api.statusGet(&status);
+    dataRefresh();
+}
+
+test "data: a broken data partition opens the data menu" {
+    tData("needs-user");
+    try testing.expectEqual(Screen.data_menu, screen);
+    tData("");
+    try testing.expectEqual(Screen.menu, screen);
+}
+
+test "data: repair before any check runs the check, not the repair" {
+    tData("needs-user");
+    handle(.enter);
+    try testing.expectEqual(Screen.data_menu, screen);
+    try testing.expectEqual(@as(usize, 0), api.data_repair_count);
+    tSettle();
+    try testing.expect(data.is("needs-user"));
+}
+
+test "data: accounting damage is repaired without PIN" {
+    tData("accounting");
+    try testing.expect(api.dataCheck());
+    tSettle();
+    handle(.enter);
+    try testing.expectEqual(Screen.progress, screen);
+    try testing.expectEqual(@as(usize, 1), api.data_repair_count);
+    tSettle();
+    handle(.back);
+    try testing.expectEqual(Screen.data_menu, screen);
+    try testing.expect(data.fixed);
+}
+
+test "data: risky damage needs PIN then REPAIR before the agent is called" {
+    tData("needs-user");
+    try testing.expect(api.dataCheck());
+    tSettle();
+    handle(.enter);
+    try testing.expectEqual(Screen.data_pin, screen);
+    handle(.connectk);
+    try testing.expectEqual(Screen.data_pin, screen);
+    tType("246810");
+    handle(.connectk);
+    try testing.expectEqual(Screen.data_confirm, screen);
+    tType("REPAI");
+    handle(.connectk);
+    try testing.expectEqual(Screen.data_confirm, screen);
+    try testing.expectEqual(@as(usize, 0), api.data_repair_count);
+    tType("R");
+    handle(.connectk);
+    try testing.expectEqual(Screen.progress, screen);
+    try testing.expectEqual(@as(usize, 1), api.data_repair_count);
+    try testing.expectEqual(@as(usize, 0), unlock_pin_len);
+}
+
+test "data: esc from PIN returns to the data menu and clears the PIN" {
+    tData("needs-user");
+    try testing.expect(api.dataCheck());
+    tSettle();
+    handle(.enter);
+    tType("2468");
+    handle(.back);
+    try testing.expectEqual(Screen.data_menu, screen);
+    try testing.expectEqual(@as(usize, 0), unlock_pin_len);
+}
+
+test "data: without a PIN verifier risky damage is not repaired" {
+    tData("nopin");
+    try testing.expect(api.dataCheck());
+    tSettle();
+    handle(.enter);
+    try testing.expectEqual(Screen.data_menu, screen);
+    try testing.expectEqual(@as(usize, 0), api.data_repair_count);
+}
+
+test "data: start is refused until the partition is repaired" {
+    tData("needs-user");
+    data_sel = 3;
+    handle(.enter);
+    try testing.expect(std.mem.indexOf(u8, std.mem.sliceTo(&toast, 0), "still needs a repair") != null);
+    data_sel = 4;
+    handle(.enter);
+    try testing.expectEqual(Screen.menu, screen);
+    handle(.back);
+    try testing.expectEqual(Screen.data_menu, screen);
+}
+
 pub fn main() void {
     api.open(null);
     if (c.getenv("RECOVERY_PNG") != null) {
@@ -1156,6 +1481,11 @@ pub fn main() void {
     _ = api.statusGet(&status);
     lock_read = api.getLockState(&lock);
     if (!lock_read) lock = .{};
+    dataRefresh();
+    if (data.isBroken()) {
+        screen = .data_menu;
+        if (data.verdict[0] == 0) _ = api.dataCheck();
+    }
     var back: usize = 0;
     var frame: usize = 0;
     while (true) {
@@ -1170,6 +1500,7 @@ pub fn main() void {
                 if (!lock_read) lock = .{};
             }
             if (screen == .sdb_pair) pairRefresh();
+            if (screen == .data_menu) dataRefresh();
         }
         const cr = c.cairo_create(fbs[back].surface);
         render(cr);

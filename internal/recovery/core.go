@@ -36,6 +36,7 @@ type Core struct {
 	cfg       Config
 	wifi      *wifi.Client
 	lockMu    sync.Mutex
+	checkMu   sync.Mutex
 	lastCheck *boot.Repair
 }
 

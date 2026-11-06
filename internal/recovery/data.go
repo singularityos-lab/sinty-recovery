@@ -37,8 +37,24 @@ func (c *Core) DataCheck() (boot.Repair, error) {
 	out, exit := runChecker(boot.F2FSChecker, "--dry-run", "-f", c.cfg.BrokenData)
 	r := boot.Repair{Dev: c.cfg.BrokenData, Before: out}
 	r.Verdict, r.Failed = boot.ClassifyF2FSCheck(out, exit)
-	c.lastCheck = &r
+	c.setLastCheck(r)
 	return r, nil
+}
+
+func (c *Core) setLastCheck(r boot.Repair) {
+	c.checkMu.Lock()
+	c.lastCheck = &r
+	c.checkMu.Unlock()
+}
+
+// LastDataCheck returns the most recent check or repair of the data partition.
+func (c *Core) LastDataCheck() (boot.Repair, bool) {
+	c.checkMu.Lock()
+	defer c.checkMu.Unlock()
+	if c.lastCheck == nil {
+		return boot.Repair{}, false
+	}
+	return *c.lastCheck, true
 }
 
 func (c *Core) verifierUIDs() []string {
@@ -84,7 +100,7 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 		return true, "The check found no damage. Nothing was changed."
 	case boot.CheckAccounting:
 		fixed := boot.RepairF2FS(c.cfg.BrokenData, runChecker)
-		c.lastCheck = &fixed
+		c.setLastCheck(fixed)
 		if !fixed.Fixed {
 			return false, "The repair did not complete. Save the report and reinstall."
 		}
@@ -107,7 +123,7 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 	out, exit := runChecker(boot.F2FSChecker, "--dry-run", "-f", c.cfg.BrokenData)
 	after, _ := boot.ClassifyF2FSCheck(out, exit)
 	r.Fix, r.After, r.Fixed = fix, out, after == boot.CheckClean
-	c.lastCheck = &r
+	c.setLastCheck(r)
 	if !r.Fixed {
 		return false, "The repair did not complete. Save the report and reinstall."
 	}
@@ -117,13 +133,13 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 // SaveReport writes the last check of the data partition to the ESP, where the
 // running system or another computer can read it.
 func (c *Core) SaveReport() (string, error) {
-	r := c.lastCheck
-	if r == nil {
+	r, ok := c.LastDataCheck()
+	if !ok {
 		checked, err := c.DataCheck()
 		if err != nil {
 			return "", err
 		}
-		r = &checked
+		r = checked
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "SINTYRECOVERY dev=%s verdict=%s fixed=%v failed=%q\n", r.Dev, r.Verdict, r.Fixed, r.Failed)

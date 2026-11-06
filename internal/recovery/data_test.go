@@ -1,10 +1,14 @@
 package recovery
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mirkobrombin/atomloops/atom"
 	"github.com/mirkobrombin/atomloops/boot"
@@ -132,5 +136,85 @@ func TestBrokenDataMenu(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(esp, "boot-state"))
 	if !strings.HasPrefix(string(b), "target=active") {
 		t.Errorf("boot-state %q", b)
+	}
+}
+
+func TestServeDataContract(t *testing.T) {
+	c, _, esp := brokenCore(t, fsckRisky)
+	withVerifier(t, esp, "1000", "246810")
+	srv := httptest.NewServer(newHandler(c))
+	defer srv.Close()
+
+	get := func() map[string]any {
+		resp, err := http.Get(srv.URL + "/data")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		json.NewDecoder(resp.Body).Decode(&m)
+		return m
+	}
+	m := get()
+	if m["broken"] != "/dev/vda2" || m["pin"] != true || m["verdict"] != "" {
+		t.Fatalf("data before check = %v", m)
+	}
+	post := func(path, body string) map[string]any {
+		resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		json.NewDecoder(resp.Body).Decode(&m)
+		return m
+	}
+	status := func() map[string]any {
+		for i := 0; i < 200; i++ {
+			resp, err := http.Get(srv.URL + "/status")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var s map[string]any
+			json.NewDecoder(resp.Body).Decode(&s)
+			resp.Body.Close()
+			if s["state"].(float64) != 2 {
+				return s
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatal("action never finished")
+		return nil
+	}
+	if r := post("/data-check", "{}"); r["started"] != true {
+		t.Fatalf("data-check = %v", r)
+	}
+	status()
+	if m := get(); m["verdict"] != "needs-user" {
+		t.Fatalf("verdict after check = %v", m)
+	}
+	post("/data-repair", `{"pin":"111111","confirm":"REPAIR"}`)
+	if s := status(); s["state"].(float64) != 4 || !strings.Contains(s["message"].(string), "Incorrect PIN") {
+		t.Fatalf("wrong PIN status = %v", s)
+	}
+	if r := post("/data-start", "{}"); r["ok"] != false {
+		t.Fatalf("start with damage = %v", r)
+	}
+	post("/data-repair", `{"pin":"246810","confirm":"REPAIR"}`)
+	if s := status(); s["state"].(float64) != 3 {
+		t.Fatalf("repair status = %v", s)
+	}
+	if m := get(); m["fixed"] != true {
+		t.Fatalf("data after repair = %v", m)
+	}
+	if r := post("/data-report", "{}"); r["ok"] != true {
+		t.Fatalf("report = %v", r)
+	}
+	if r := post("/data-start", "{}"); r["ok"] != true {
+		t.Fatalf("start = %v", r)
+	}
+	b, _ := os.ReadFile(filepath.Join(esp, "boot-state"))
+	if !strings.HasPrefix(string(b), "target=active") {
+		t.Fatalf("boot-state = %q", b)
 	}
 }

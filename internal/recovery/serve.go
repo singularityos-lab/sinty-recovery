@@ -3,16 +3,20 @@ package recovery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/mirkobrombin/atomloops/boot"
 )
 
 const maxRequestBytes int64 = 4096
@@ -171,6 +175,58 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 	mux.HandleFunc("POST /repair", start("Repairing", func(context.Context) (string, error) { return core.Repair() }))
 	mux.HandleFunc("POST /rollback", start("Rolling back", func(context.Context) (string, error) { return core.Rollback() }))
 	mux.HandleFunc("POST /repair-loader", start("Repairing the boot loader", func(context.Context) (string, error) { return core.RepairLoader() }))
+
+	mux.HandleFunc("GET /data", func(w http.ResponseWriter, r *http.Request) {
+		out := map[string]any{"broken": core.DataBroken(), "verdict": "", "fixed": false, "pin": core.HasPINVerifier()}
+		if last, ok := core.LastDataCheck(); ok {
+			out["verdict"], out["fixed"] = last.Verdict.String(), last.Fixed
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	mux.HandleFunc("POST /data-check", start("Checking the data partition", func(context.Context) (string, error) {
+		r, err := core.DataCheck()
+		if err != nil {
+			return "", err
+		}
+		switch r.Verdict {
+		case boot.CheckClean:
+			return "The check found no damage.", nil
+		case boot.CheckAccounting:
+			return "The check found damage that can be repaired safely.", nil
+		}
+		return "The check found damage that may remove files when repaired.", nil
+	}))
+
+	mux.HandleFunc("POST /data-repair", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			PIN     string `json:"pin"`
+			Confirm string `json:"confirm"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBytes)).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"started": false, "error": err.Error()})
+			return
+		}
+		start("Repairing the data partition", func(context.Context) (string, error) {
+			ok, msg := core.DataRepair(req.PIN, req.Confirm)
+			if !ok {
+				return "", errors.New(msg)
+			}
+			return msg, nil
+		})(w, r)
+	})
+
+	mux.HandleFunc("POST /data-report", func(w http.ResponseWriter, r *http.Request) {
+		path, err := core.SaveReport()
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "The report was saved to the EFI partition as " + filepath.Base(path) + "."})
+	})
+	mux.HandleFunc("POST /data-start", func(w http.ResponseWriter, r *http.Request) {
+		ok, msg := core.StartSystem()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "message": msg})
+	})
 
 	// GET /lock-state -> {"locked","unlock_armed","unlock_count"}  (fail-closed read)
 	mux.HandleFunc("GET /lock-state", func(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/mirkobrombin/atomloops/boot"
 )
 
 // TTY is the interactive text-mode recovery UI: the fallback that works with no
@@ -43,6 +45,9 @@ func (t *TTY) prompt(label string) (string, bool) {
 
 // Run drives the menu loop.
 func (t *TTY) Run(ctx context.Context) error {
+	if t.core.DataBroken() != "" {
+		return t.runBroken(ctx)
+	}
 	for {
 		t.printf("\n=== Sinty Recovery ===\n")
 		t.printf("  1) Connetti al wifi\n")
@@ -240,4 +245,88 @@ func setEcho(on bool) {
 		t.Lflag &^= syscall.ECHO
 	}
 	syscall.Syscall(syscall.SYS_IOCTL, 0, syscall.TCSETS, uintptr(unsafe.Pointer(&t)))
+}
+
+func (t *TTY) runBroken(ctx context.Context) error {
+	t.printf("\nLa partizione dati %s non si monta. Il sistema installato e i suoi aggiornamenti stanno su questa partizione.\n", t.core.DataBroken())
+	for {
+		t.printf("\n=== Sinty Recovery: partizione dati danneggiata ===\n")
+		t.printf("  1) Controlla la partizione (non scrive nulla)\n")
+		t.printf("  2) Ripara la partizione\n")
+		t.printf("  3) Salva il rapporto sulla partizione di sistema\n")
+		t.printf("  4) Avvia Sinty OS\n")
+		t.printf("  5) Connetti al wifi\n")
+		t.printf("  6) Riavvia\n")
+		choice, ok := t.prompt("> ")
+		if !ok {
+			return nil
+		}
+		switch choice {
+		case "1":
+			t.doDataCheck()
+		case "2":
+			t.doDataRepair()
+		case "3":
+			path, err := t.core.SaveReport()
+			if err != nil {
+				t.printf("Rapporto non salvato: %v\n", err)
+				continue
+			}
+			t.printf("Rapporto salvato in %s\n", path)
+		case "4":
+			_, msg := t.core.StartSystem()
+			t.printf("%s\n", msg)
+		case "5":
+			t.doWifi(ctx)
+		case "6":
+			t.printf("Riavvio...\n")
+			return reboot()
+		default:
+			t.printf("Scelta non valida.\n")
+		}
+	}
+}
+
+func (t *TTY) doDataCheck() {
+	t.printf("Controllo in corso...\n")
+	r, err := t.core.DataCheck()
+	if err != nil {
+		t.printf("Controllo non riuscito: %v\n", err)
+		return
+	}
+	switch r.Verdict {
+	case boot.CheckClean:
+		t.printf("Nessun danno trovato.\n")
+	case boot.CheckAccounting:
+		t.printf("Danni solo nei conteggi del filesystem: la riparazione non tocca i file.\n")
+	default:
+		t.printf("La riparazione potrebbe rimuovere file. Serve il PIN del proprietario.\n")
+	}
+	for _, f := range r.Failed {
+		t.printf("  - %s\n", f)
+	}
+}
+
+func (t *TTY) doDataRepair() {
+	r, err := t.core.DataCheck()
+	if err != nil {
+		t.printf("Controllo non riuscito: %v\n", err)
+		return
+	}
+	pin, confirm := "", ""
+	if r.Verdict == boot.CheckNeedsUser {
+		if !t.core.HasPINVerifier() {
+			t.printf("Questo dispositivo non puo' verificare il PIN senza la partizione dati. Salva il rapporto e reinstalla.\n")
+			return
+		}
+		t.printf("ATTENZIONE: questa riparazione puo' rimuovere file danneggiati.\n")
+		setEcho(false)
+		pin, _ = t.prompt("PIN del proprietario> ")
+		setEcho(true)
+		t.printf("\n")
+		confirm, _ = t.prompt("Scrivi REPAIR per continuare> ")
+	}
+	t.printf("Riparazione in corso...\n")
+	_, msg := t.core.DataRepair(pin, confirm)
+	t.printf("%s\n", msg)
 }

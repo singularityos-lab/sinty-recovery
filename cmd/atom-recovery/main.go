@@ -36,6 +36,7 @@ func run(args []string) int {
 	runtime := fs.Bool("runtime", false, "limit serve mode to owner-authenticated unlock policy controls")
 	ownerUID := fs.Int("owner-uid", -1, "fixed owner uid for runtime PIN checks (default: unix peer uid)")
 	socketGroup := fs.String("socket-group", "", "group allowed to access the runtime policy socket")
+	dataBroken := fs.String("data-broken", "", "data partition that was found but cannot be mounted")
 	sintykeyBin := fs.String("sintykey", "sintykey", "path to the sintykey crypto CLI that owns the TPM lock bit, verity toggle and key custody")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -73,6 +74,7 @@ func run(args []string) int {
 		LoaderImage:   *loaderImage,
 		LoaderSig:     *loaderSig,
 		Dirs:          atom.StageDirs{Rootfs: *rootfsDir, ESP: *espDir},
+		BrokenData:    *dataBroken,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

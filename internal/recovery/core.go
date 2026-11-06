@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mirkobrombin/atomloops/atom"
+	"github.com/mirkobrombin/atomloops/boot"
 	"github.com/singularityos-lab/sinty-recovery/internal/wifi"
 )
 
@@ -24,15 +25,18 @@ type Config struct {
 	LoaderImage   string // signed boot loader carried by the recovery image
 	LoaderSig     string
 	Dirs          atom.StageDirs
+	// BrokenData is the data partition that was found but cannot be mounted.
+	BrokenData string
 }
 
 // Core is the recovery logic shared by every front-end: the interactive TTY
 // fallback (in-process) and the Cairo UI (over the local HTTP API) both drive
 // these methods, so the two UIs can never drift in behavior.
 type Core struct {
-	cfg    Config
-	wifi   *wifi.Client
-	lockMu sync.Mutex
+	cfg       Config
+	wifi      *wifi.Client
+	lockMu    sync.Mutex
+	lastCheck *boot.Repair
 }
 
 // NewCore builds the recovery core for the given config.

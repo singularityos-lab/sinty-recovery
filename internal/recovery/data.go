@@ -145,15 +145,12 @@ func (c *Core) SaveReport() (string, error) {
 		}
 		r = checked
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "SINTYRECOVERY dev=%s verdict=%s fixed=%v failed=%q\n", r.Dev, r.Verdict, r.Fixed, r.Failed)
-	fmt.Fprintf(&b, "--- check\n%s\n--- fix\n%s\n--- recheck\n%s\n", r.Before, r.Fix, r.After)
 	dir := filepath.Join(c.cfg.Dirs.ESP, "state")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, "SINTYRECOVERY-"+time.Now().UTC().Format("20060102-150405")+".txt")
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(r.Report("SINTYRECOVERY")), 0o644); err != nil {
 		return "", err
 	}
 	return path, nil

@@ -110,13 +110,21 @@ func (c *Core) validateDataDir() error {
 	return nil
 }
 
+const sysSyncfs = 306
+
 func syncDir(path string) error {
 	dir, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer dir.Close()
-	return dir.Sync()
+	if err := dir.Sync(); err != nil {
+		return err
+	}
+	if _, _, errno := syscall.Syscall(sysSyncfs, dir.Fd(), 0, 0); errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 func removeChildrenExcept(dir string, keep map[string]bool) error {

@@ -13,6 +13,8 @@ import (
 
 var runChecker boot.Runner = boot.RunCommand
 
+var logRepair = boot.LogDataRepair
+
 var verifyVerifierPIN = func(uid, pin string) (bool, error) {
 	cmd := exec.Command(sintykeyBin, "verify-pin", "--uid", uid, "--verifier")
 	cmd.Stdin = strings.NewReader(pin + "\n")
@@ -101,6 +103,7 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 	case boot.CheckAccounting:
 		fixed := boot.RepairF2FS(c.cfg.BrokenData, runChecker)
 		c.setLastCheck(fixed)
+		logRepair(fixed)
 		if !fixed.Fixed {
 			return false, "The repair did not complete. Save the report and reinstall."
 		}
@@ -124,6 +127,7 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 	after, _ := boot.ClassifyF2FSCheck(out, exit)
 	r.Fix, r.After, r.Fixed = fix, out, after == boot.CheckClean
 	c.setLastCheck(r)
+	logRepair(r)
 	if !r.Fixed {
 		return false, "The repair did not complete. Save the report and reinstall."
 	}

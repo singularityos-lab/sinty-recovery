@@ -41,9 +41,10 @@ func brokenCore(t *testing.T, state string) (*Core, *fakeDisk, string) {
 	t.Helper()
 	esp := t.TempDir()
 	d := &fakeDisk{state: state}
-	old := runChecker
+	old, oldLog := runChecker, logRepair
 	runChecker = d.run
-	t.Cleanup(func() { runChecker = old })
+	logRepair = func(boot.Repair) {}
+	t.Cleanup(func() { runChecker, logRepair = old, oldLog })
 	c := NewCore(Config{BrokenData: "/dev/vda2", Dirs: atom.StageDirs{ESP: esp}})
 	return c, d, esp
 }

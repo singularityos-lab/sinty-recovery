@@ -108,6 +108,8 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 			return false, "The repair did not complete. Save the report and reinstall."
 		}
 		return true, "The data partition was repaired."
+	case boot.CheckUnrepairable:
+		return false, "This data partition cannot be repaired. Nothing was changed. Save a report, then reinstall."
 	}
 	if !c.HasPINVerifier() {
 		return false, "This repair can remove files and needs the owner's PIN, which cannot be checked on this device. Nothing was changed."
@@ -150,7 +152,7 @@ func (c *Core) SaveReport() (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, "SINTYRECOVERY-"+time.Now().UTC().Format("20060102-150405")+".txt")
-	if err := os.WriteFile(path, []byte(r.Report("SINTYRECOVERY")), 0o644); err != nil {
+	if err := writeDurable(path, []byte(r.Report("SINTYRECOVERY"))); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -166,12 +168,37 @@ func (c *Core) StartSystem() (bool, string) {
 		}
 	}
 	path := filepath.Join(c.cfg.Dirs.ESP, "boot-state")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte("target=active\ntrial=0\nattempts=0\n"), 0o644); err != nil {
-		return false, "The boot state could not be written: " + err.Error()
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := writeDurable(path, []byte("target=active\ntrial=0\nattempts=0\n")); err != nil {
 		return false, "The boot state could not be written: " + err.Error()
 	}
 	return true, "Sinty OS will start at the next boot."
+}
+
+func writeDurable(path string, b []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".write-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return syncDir(dir)
 }

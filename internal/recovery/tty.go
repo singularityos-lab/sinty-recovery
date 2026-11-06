@@ -302,6 +302,8 @@ func (t *TTY) doDataCheck() {
 		t.printf("Nessun danno trovato.\n")
 	case boot.CheckAccounting:
 		t.printf("Danni solo nei conteggi del filesystem: la riparazione non tocca i file.\n")
+	case boot.CheckUnrepairable:
+		t.printf("La partizione dati non ha piu' strutture valide e non si puo' riparare. Salva il rapporto e reinstalla.\n")
 	default:
 		t.printf("La riparazione potrebbe rimuovere file. Serve il PIN del proprietario.\n")
 	}
@@ -314,6 +316,10 @@ func (t *TTY) doDataRepair() {
 	r, err := t.core.DataCheck()
 	if err != nil {
 		t.printf("Controllo non riuscito: %v\n", err)
+		return
+	}
+	if r.Verdict == boot.CheckUnrepairable {
+		t.printf("La partizione dati non si puo' riparare. Nulla e' stato modificato.\n")
 		return
 	}
 	pin, confirm := "", ""

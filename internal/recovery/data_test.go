@@ -18,6 +18,7 @@ const (
 	fsckClean      = "[FSCK] valid_node_count matching with CP (nat lookup) [Ok..] [0xcc]\n"
 	fsckAccounting = "[FSCK] valid_node_count matching with CP (nat lookup) [Fail] [0xcc]\n"
 	fsckRisky      = "[ASSERT] (sanity_check_nid: 429)  --> nid[0xa]\n[FSCK] Unreachable nat entries                        [Fail] [0x1]\n"
+	fsckNoCP       = "\tInvalid CP CRC: offset:4092, crc:0x0, calc:0x21a77b64\n[f2fs_do_mount:3637] Can't find valid checkpoint\n"
 )
 
 type fakeDisk struct {
@@ -88,6 +89,19 @@ func TestRiskyRepairNeedsPINAndConfirmation(t *testing.T) {
 	}
 	if ok, msg := c.DataRepair("1234", "REPAIR"); !ok {
 		t.Fatalf("confirmed repair refused: %s", msg)
+	}
+}
+
+func TestUnrepairablePartitionIsNeverWritten(t *testing.T) {
+	c, d, esp := brokenCore(t, fsckNoCP)
+	withVerifier(t, esp, "1001", "1234")
+	if ok, msg := c.DataRepair("1234", "REPAIR"); ok || !strings.Contains(msg, "cannot be repaired") {
+		t.Fatalf("unrepairable partition: ok=%v %q", ok, msg)
+	}
+	for _, call := range d.calls {
+		if strings.HasPrefix(call, "-f -y") {
+			t.Fatalf("the disk was written: %v", d.calls)
+		}
 	}
 }
 

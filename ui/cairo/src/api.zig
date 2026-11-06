@@ -90,7 +90,7 @@ pub fn open(addr: ?[]const u8) void {
         const v = std.mem.span(m);
         if (v.len > 0) {
             setz(&mk_data.broken, "/dev/nvme0n1p2");
-            mk_data_damage = if (std.mem.eql(u8, v, "accounting")) "accounting" else "needs-user";
+            mk_data_damage = if (std.mem.eql(u8, v, "accounting")) "accounting" else if (std.mem.eql(u8, v, "unrepairable")) "unrepairable" else "needs-user";
             mk_data.pin = !std.mem.eql(u8, v, "nopin");
         }
     }

@@ -195,6 +195,8 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 			return "The check found no damage.", nil
 		case boot.CheckAccounting:
 			return "The check found damage that can be repaired safely.", nil
+		case boot.CheckUnrepairable:
+			return "The data partition cannot be repaired.", nil
 		}
 		return "The check found damage that may remove files when repaired.", nil
 	}))

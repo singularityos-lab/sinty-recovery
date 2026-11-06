@@ -395,6 +395,8 @@ fn drawDataMenu(cr: ?*c.cairo_t) void {
         dataCard(cr, acc, "The data partition checks clean.", &.{"Choose Start Sinty OS to boot normally."});
     } else if (data.is("accounting")) {
         dataCard(cr, acc, "The damage can be repaired safely.", &.{ "Only file system counters are wrong. No file is removed.", "Choose Repair the data partition." });
+    } else if (data.is("unrepairable")) {
+        dataCard(cr, warn, "This data partition cannot be repaired.", &.{ "Its file system records are destroyed. Nothing was changed.", "Save a report, then reinstall from More recovery options." });
     } else if (data.pin) {
         dataCard(cr, warn, "Repairing may remove damaged files.", &.{ "Files that cannot be read back may be lost.", "The owner's PIN and the word REPAIR are asked first." });
     } else {
@@ -622,7 +624,9 @@ fn clearEntry() void {
 
 fn dataRefresh() void {
     var d: api.DataState = .{};
-    if (api.dataGet(&d)) data = d;
+    if (!api.dataGet(&d)) return;
+    if (d.is("unrepairable") and !data.is("unrepairable")) data_sel = 2;
+    data = d;
 }
 
 fn dataRepairChosen() void {
@@ -634,6 +638,8 @@ fn dataRepairChosen() void {
         if (api.dataCheck()) setz(&toast, "Checking the data partition first.") else setz(&toast, "The check could not start.");
     } else if (data.is("clean")) {
         setz(&toast, "There is nothing to repair.");
+    } else if (data.is("unrepairable")) {
+        setz(&toast, "This data partition cannot be repaired. Nothing was changed.");
     } else if (data.is("accounting")) {
         if (api.dataRepair("", "")) {
             toast[0] = 0;
@@ -1044,6 +1050,9 @@ fn preview() void {
     png("/tmp/rc-zig-16-data-risky.png");
     data.pin = false;
     png("/tmp/rc-zig-17-data-risky-nopin.png");
+    setz(&data.verdict, "unrepairable");
+    png("/tmp/rc-zig-22-data-unrepairable.png");
+    setz(&data.verdict, "needs-user");
     data.pin = true;
     unlock_pin_len = 6;
     screen = .data_pin;
@@ -1424,6 +1433,18 @@ test "data: accounting damage is repaired without PIN" {
     handle(.back);
     try testing.expectEqual(Screen.data_menu, screen);
     try testing.expect(data.fixed);
+}
+
+test "data: an unrepairable partition never calls the repair" {
+    tData("unrepairable");
+    try testing.expect(api.dataCheck());
+    tSettle();
+    try testing.expect(data.is("unrepairable"));
+    try testing.expectEqual(@as(usize, 2), data_sel);
+    data_sel = 0;
+    handle(.enter);
+    try testing.expectEqual(Screen.data_menu, screen);
+    try testing.expectEqual(@as(usize, 0), api.data_repair_count);
 }
 
 test "data: risky damage needs PIN then REPAIR before the agent is called" {

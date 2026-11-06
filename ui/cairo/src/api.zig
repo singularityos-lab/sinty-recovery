@@ -63,6 +63,7 @@ pub const Status = struct {
     state: State = .idle,
     progress: i32 = -1,
     message: [160]u8 = std.mem.zeroes([160]u8),
+    reason: [160]u8 = std.mem.zeroes([160]u8),
 };
 
 var use_mock = false;
@@ -259,6 +260,7 @@ pub fn statusGet(out: *Status) bool {
         out.online = mk_online;
         setz(&out.current, "slotA@a1b2c3");
         setz(&out.rollback, "slotB@d4e5f6");
+        if (std.c.getenv("RECOVERY_MOCK_REASON")) |m| setz(&out.reason, std.mem.span(m));
         out.state = mk_state;
         out.progress = -1;
         if (mk_state == .working) {
@@ -285,6 +287,7 @@ pub fn statusGet(out: *Status) bool {
     out.state = @enumFromInt(@as(u8, @intCast(@max(0, jInt(b, "state", 0)))));
     out.progress = jInt(b, "progress", -1);
     jStr(b, "message", &out.message);
+    jStr(b, "reason", &out.reason);
     return true;
 }
 

@@ -149,6 +149,11 @@ fn drawItems(cr: ?*c.cairo_t, items: []const [*:0]const u8, sel: usize, top: f64
 
 fn drawMenu(cr: ?*c.cairo_t) void {
     header(cr, if (status.online) "Connected. Choose an action." else "Not connected. Reinstall needs wifi.");
+    if (status.reason[0] != 0) {
+        var why: [200]u8 = undefined;
+        const line = std.fmt.bufPrintZ(&why, "Sinty OS could not start: {s}.", .{std.mem.sliceTo(&status.reason, 0)}) catch "Sinty OS could not start.";
+        text(cr, "18", line.ptr, fw() / 2, 196, 1, warn);
+    }
     const y = drawItems(cr, &menu_items, menu_sel, fh() / 2 - 120, 64, 18);
     const lock_line: [*:0]const u8 = if (!lock_read)
         "Bootloader state unavailable."
@@ -1054,7 +1059,15 @@ fn preview() void {
     setz(&toast, "Sinty OS will start at the next boot. Press F12 to restart.");
     png("/tmp/rc-zig-20-data-fixed.png");
 
-    std.debug.print("wrote {d} Zig-rendered recovery screens to /tmp/rc-zig-*.png\n", .{screens.len + 13});
+    toast[0] = 0;
+    status.online = false;
+    menu_sel = 0;
+    screen = .menu;
+    setz(&status.reason, "the system kernel has an invalid signature");
+    png("/tmp/rc-zig-21-menu-reason.png");
+    status.reason[0] = 0;
+
+    std.debug.print("wrote {d} Zig-rendered recovery screens to /tmp/rc-zig-*.png\n", .{screens.len + 14});
 }
 
 // ── tests: drive the real handle() with scripted events ──

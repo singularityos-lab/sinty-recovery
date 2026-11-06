@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/mirkobrombin/atomloops/atom"
@@ -38,6 +40,36 @@ type Core struct {
 	lockMu    sync.Mutex
 	checkMu   sync.Mutex
 	lastCheck *boot.Repair
+	reason    sync.Once
+	why       Reason
+}
+
+// Reason is why the boot chain sent the device to recovery: Code is a boot
+// diagnosis code, or "loader" when the boot loader refused the system kernel.
+type Reason struct {
+	Code  string `json:"code"`
+	Cause string `json:"cause"`
+}
+
+// Reason reads the cause left in state/recovery-reason by the loader or the
+// initramfs, once, and removes the file so a later recovery started by hand
+// does not repeat it. It is empty when the owner asked for recovery.
+func (c *Core) Reason() Reason {
+	c.reason.Do(func() {
+		p := filepath.Join(c.cfg.Dirs.ESP, "state", "recovery-reason")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return
+		}
+		os.Remove(p)
+		line, _, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
+		code, cause, ok := strings.Cut(line, ": ")
+		if !ok {
+			code, cause = "", line
+		}
+		c.why = Reason{Code: code, Cause: cause}
+	})
+	return c.why
 }
 
 // NewCore builds the recovery core for the given config.

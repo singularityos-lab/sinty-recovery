@@ -48,6 +48,9 @@ func (t *TTY) Run(ctx context.Context) error {
 	if t.core.DataBroken() != "" {
 		return t.runBroken(ctx)
 	}
+	if why := t.core.Reason(); why.Cause != "" {
+		t.printf("\nSinty OS could not start: %s.\n", why.Cause)
+	}
 	for {
 		t.printf("\n=== Sinty Recovery ===\n")
 		t.printf("  1) Connetti al wifi\n")

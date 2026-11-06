@@ -146,9 +146,11 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 		if s, err := core.Status(); err == nil {
 			cur, rb = s.Current, s.Rollback
 		}
+		why := core.Reason()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"online": online, "current": cur, "rollback": rb,
 			"state": state, "progress": progress, "message": message,
+			"reason": why.Cause, "reason_code": why.Code,
 		})
 	})
 

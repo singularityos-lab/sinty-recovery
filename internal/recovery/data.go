@@ -133,7 +133,7 @@ func (c *Core) DataRepair(pin, confirm string) (bool, string) {
 	if !r.Fixed {
 		return false, "The repair did not complete. Save the report and reinstall."
 	}
-	return true, "The data partition was repaired. Some files may have been moved to lost+found."
+	return true, "The data partition was repaired. Damaged files that could not be read back were removed."
 }
 
 // SaveReport writes the last check of the data partition to the ESP, where the

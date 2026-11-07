@@ -1,10 +1,4 @@
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106224502-5c66a508c7fb h1:pmonpD1mPSa/gDdRHXZsHfXd81RkJzwUuIZJEuMKMKc=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106224502-5c66a508c7fb/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106233803-8468983038b0 h1:nWM2USdPhWCQG95YS09I+YuQiAT0peA+jM1AOxX+Hn8=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106233803-8468983038b0/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106235302-5f833d034eff h1:TxuBi8Vipd8gzBxiT+uzOc/4aBg/md2d5yDZnNZdDew=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106235302-5f833d034eff/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106235608-ad543293e055 h1:YO8RSx85vuCQ58rt3qpzITumctR61kgIh/4JGuRrtqE=
-github.com/mirkobrombin/atomloops v0.2.10-0.20261106235608-ad543293e055/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
+github.com/mirkobrombin/atomloops v0.2.10-0.20261107024031-ae218e5b9639 h1:CEC5/KFfcZwjt1Udb5zp2/9fPlqLV78nfqZ/T6CbQ0M=
+github.com/mirkobrombin/atomloops v0.2.10-0.20261107024031-ae218e5b9639/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
 github.com/mirkobrombin/go-foundation v1.1.1 h1:96OBbRCglZYCgi2Tu+H0/bK3JGdPDBJRCQMD/cXMu4U=
 github.com/mirkobrombin/go-foundation v1.1.1/go.mod h1:ScQBotKzuC5Lxi61Wyw0h8NaeGKsuwp4xHwPj5Mj9DY=

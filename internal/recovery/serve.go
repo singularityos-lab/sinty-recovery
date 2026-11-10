@@ -232,6 +232,60 @@ func newHandlerWithPolicy(core *Core, policy HandlerPolicy) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "message": msg})
 	})
 
+	mux.HandleFunc("GET /homes", func(w http.ResponseWriter, r *http.Request) {
+		homes, err := core.Homes()
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"homes": []Home{}, "local": core.cfg.LocalRelease != "", "message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"homes": homes, "local": core.cfg.LocalRelease != ""})
+	})
+	mux.HandleFunc("POST /unlock-home", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			UID      int    `json:"uid"`
+			Secret   string `json:"secret"`
+			Recovery bool   `json:"recovery"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBytes)).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		if err := core.UnlockHome(req.UID, req.Secret, req.Recovery); err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "The files of the account are open."})
+	})
+	mux.HandleFunc("POST /copy-home", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			UID int `json:"uid"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBytes)).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"started": false, "error": err.Error()})
+			return
+		}
+		start("Copying the files", func(context.Context) (string, error) {
+			dst, err := core.CopyHome(req.UID)
+			if err != nil {
+				return "", err
+			}
+			return "The files were copied to " + dst + ".", nil
+		})(w, r)
+	})
+	mux.HandleFunc("GET /sealed-log", func(w http.ResponseWriter, r *http.Request) {
+		uid, err := strconv.Atoi(r.URL.Query().Get("uid"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "uid"})
+			return
+		}
+		text, err := core.SealedLog(uid)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "log": text})
+	})
+
 	// GET /lock-state -> {"locked","unlock_armed","unlock_count"}  (fail-closed read)
 	mux.HandleFunc("GET /lock-state", func(w http.ResponseWriter, r *http.Request) {
 		s := core.LockState()

@@ -1,4 +1,6 @@
 github.com/mirkobrombin/atomloops v0.2.10-0.20261109135043-9d56025cdc35 h1:1IdRet0m3Y/pl+eLrw1vsh7RPcl32T/OfMPDvSnLGRo=
 github.com/mirkobrombin/atomloops v0.2.10-0.20261109135043-9d56025cdc35/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
+github.com/mirkobrombin/atomloops v0.2.10-0.20261110151000-0afe50515b7a h1:Ds/XWNJLIsDJDNg+w0Y4FwIq23T0TVai1UPm3lfyLvc=
+github.com/mirkobrombin/atomloops v0.2.10-0.20261110151000-0afe50515b7a/go.mod h1:18MprTBFQSIFeYCnzhsK7grT9e3E7Yxao1gE+mG4bgY=
 github.com/mirkobrombin/go-foundation v1.1.1 h1:96OBbRCglZYCgi2Tu+H0/bK3JGdPDBJRCQMD/cXMu4U=
 github.com/mirkobrombin/go-foundation v1.1.1/go.mod h1:ScQBotKzuC5Lxi61Wyw0h8NaeGKsuwp4xHwPj5Mj9DY=

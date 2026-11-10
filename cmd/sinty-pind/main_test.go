@@ -89,4 +89,3 @@ func TestKeys(t *testing.T) {
 		t.Errorf("add did not reach sintykey: %s", data)
 	}
 }
-

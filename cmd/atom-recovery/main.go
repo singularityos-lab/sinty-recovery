@@ -37,6 +37,8 @@ func run(args []string) int {
 	ownerUID := fs.Int("owner-uid", -1, "fixed owner uid for runtime PIN checks (default: unix peer uid)")
 	socketGroup := fs.String("socket-group", "", "group allowed to access the runtime policy socket")
 	dataBroken := fs.String("data-broken", "", "data partition that was found but cannot be mounted")
+	from := fs.String("from", "", "release directory on the drive this runs from, used instead of the network")
+	rescueDir := fs.String("rescue-dir", "", "where files copied off the computer go")
 	sintykeyBin := fs.String("sintykey", "sintykey", "path to the sintykey crypto CLI that owns the TPM lock bit, verity toggle and key custody")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -75,6 +77,8 @@ func run(args []string) int {
 		LoaderSig:     *loaderSig,
 		Dirs:          atom.StageDirs{Rootfs: *rootfsDir, ESP: *espDir},
 		BrokenData:    *dataBroken,
+		LocalRelease:  *from,
+		RescueDir:     *rescueDir,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

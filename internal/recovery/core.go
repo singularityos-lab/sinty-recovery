@@ -29,6 +29,11 @@ type Config struct {
 	Dirs          atom.StageDirs
 	// BrokenData is the data partition that was found but cannot be mounted.
 	BrokenData string
+	// LocalRelease is a release kept on the drive this runs from, used instead
+	// of the network when set.
+	LocalRelease string
+	// RescueDir is where files copied off the computer go.
+	RescueDir string
 }
 
 // Core is the recovery logic shared by every front-end: the interactive TTY
@@ -42,6 +47,8 @@ type Core struct {
 	lastCheck *boot.Repair
 	reason    sync.Once
 	why       Reason
+	homeMu    sync.Mutex
+	opened    map[int]bool
 }
 
 // Reason is why the boot chain sent the device to recovery: Code is a boot
@@ -74,7 +81,7 @@ func (c *Core) Reason() Reason {
 
 // NewCore builds the recovery core for the given config.
 func NewCore(cfg Config) *Core {
-	return &Core{cfg: cfg, wifi: wifi.New(cfg.Iface)}
+	return &Core{cfg: cfg, wifi: wifi.New(cfg.Iface), opened: map[int]bool{}}
 }
 
 // Scan lists reachable wireless networks.
@@ -131,6 +138,9 @@ func (c *Core) RepairLoader() (string, error) {
 
 // Reinstall fetches, verifies and stages a fresh signed image over the network.
 func (c *Core) Reinstall(ctx context.Context) (string, error) {
+	if c.cfg.LocalRelease != "" {
+		return c.reinstallLocal(ctx)
+	}
 	return Reinstall(ctx, c.cfg.WALPath, c.cfg.ManifestURL, c.cfg.RevocationURL, c.cfg.RootPub, c.cfg.Dirs)
 }
 

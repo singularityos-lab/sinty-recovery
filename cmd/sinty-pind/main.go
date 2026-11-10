@@ -6,6 +6,16 @@
 //
 //	-> "<current-PIN>\n<new-PIN>\n"
 //	<- "OK\n" | "FAIL: <reason>\n"
+//
+//	-> "keys v1\n"
+//	<- "KEY <index>\t<name>\n"... "OK\n"
+//
+//	-> "add-key v1\n<PIN>\n<name>\n<security-key-PIN>\n"
+//	-> "remove-key v1\n<PIN>\n<index>\n"
+//	<- "OK\n" | "FAIL: <reason>\n"
+//
+// A failure caused by the security key carries its sintykey code, such as
+// security-key-untouched, as the reason.
 package main
 
 import (
@@ -17,6 +27,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -67,9 +78,81 @@ func peerUID(c *net.UnixConn) (int, error) {
 	return int(ucred.Uid), nil
 }
 
+var keyFailure = regexp.MustCompile(`security-key-[a-z-]+`)
+
+func readLine(r *bufio.Reader) (string, error) {
+	s, err := r.ReadString('\n')
+	return strings.TrimRight(s, "\r\n"), err
+}
+
+func runKey(sintykey string, stdin string, args ...string) (string, error) {
+	cmd := exec.Command(sintykey, args...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stderr strings.Builder
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	out, err := cmd.Output()
+	if err != nil {
+		if code := keyFailure.FindString(stderr.String()); code != "" {
+			return "", fmt.Errorf("%s", code)
+		}
+	}
+	return string(out), err
+}
+
+func handleKeys(c *net.UnixConn, r *bufio.Reader, sintykey, request string, uid int) {
+	id := strconv.Itoa(uid)
+	switch request {
+	case "keys v1":
+		out, err := runKey(sintykey, "", "security-keys", "--uid", id)
+		if err != nil {
+			fmt.Fprint(c, "FAIL: cannot list the security keys\n")
+			return
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line != "" {
+				fmt.Fprintf(c, "KEY %s\n", line)
+			}
+		}
+		fmt.Fprint(c, "OK\n")
+	case "add-key v1":
+		pin, err1 := readLine(r)
+		name, err2 := readLine(r)
+		devicePin, err3 := readLine(r)
+		if err1 != nil || err2 != nil || err3 != nil || strings.TrimSpace(name) == "" {
+			fmt.Fprint(c, "FAIL: protocol\n")
+			return
+		}
+		if _, err := runKey(sintykey, pin+"\n"+devicePin+"\n", "add-security-key", "--uid", id, "--name", name); err != nil {
+			reply(c, err, "PIN incorrect or the security key was not added")
+			return
+		}
+		fmt.Fprint(c, "OK\n")
+	case "remove-key v1":
+		pin, err1 := readLine(r)
+		index, err2 := readLine(r)
+		if _, err := strconv.Atoi(index); err1 != nil || err2 != nil || err != nil {
+			fmt.Fprint(c, "FAIL: protocol\n")
+			return
+		}
+		if _, err := runKey(sintykey, pin+"\n", "remove-security-key", "--uid", id, "--index", index); err != nil {
+			reply(c, err, "PIN incorrect or the security key was not removed")
+			return
+		}
+		fmt.Fprint(c, "OK\n")
+	}
+}
+
+func reply(c *net.UnixConn, err error, fallback string) {
+	if strings.HasPrefix(err.Error(), "security-key-") {
+		fmt.Fprintf(c, "FAIL: %s\n", err)
+		return
+	}
+	fmt.Fprintf(c, "FAIL: %s\n", fallback)
+}
+
 func handle(c *net.UnixConn, sintykey string) {
 	defer c.Close()
-	_ = c.SetDeadline(time.Now().Add(30 * time.Second))
+	_ = c.SetDeadline(time.Now().Add(150 * time.Second))
 
 	uid, err := peerUID(c)
 	if err != nil {
@@ -78,14 +161,16 @@ func handle(c *net.UnixConn, sintykey string) {
 	}
 
 	r := bufio.NewReader(io.LimitReader(c, 4096)) // PINs are short; cap the read
-	cur, err1 := r.ReadString('\n')
-	next, err2 := r.ReadString('\n')
+	cur, err1 := readLine(r)
+	if err1 == nil && (cur == "keys v1" || cur == "add-key v1" || cur == "remove-key v1") {
+		handleKeys(c, r, sintykey, cur, uid)
+		return
+	}
+	next, err2 := readLine(r)
 	if err1 != nil || err2 != nil {
 		fmt.Fprint(c, "FAIL: protocol (send <current-PIN>\\n<new-PIN>\\n)\n")
 		return
 	}
-	cur = strings.TrimRight(cur, "\r\n")
-	next = strings.TrimRight(next, "\r\n")
 	if len(next) < 4 {
 		fmt.Fprint(c, "FAIL: new PIN too short (minimum 4 characters)\n")
 		return
@@ -93,11 +178,8 @@ func handle(c *net.UnixConn, sintykey string) {
 
 	// sintykey unseals under the current PIN (wrong PIN -> non-zero exit, TPM-throttled),
 	// then re-seals under the new one. uid is the kernel's, never the client's.
-	cmd := exec.Command(sintykey, "change-pin", "--uid", strconv.Itoa(uid))
-	cmd.Stdin = strings.NewReader(cur + "\n" + next + "\n")
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Fprint(c, "FAIL: current PIN incorrect or re-seal failed\n") // don't reveal which
+	if _, err := runKey(sintykey, cur+"\n"+next+"\n", "change-pin", "--uid", strconv.Itoa(uid)); err != nil {
+		reply(c, err, "current PIN incorrect or re-seal failed")
 		return
 	}
 	fmt.Fprint(c, "OK\n")

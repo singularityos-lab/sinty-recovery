@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,7 +189,28 @@ func (c *Core) CopyHome(uid int) (string, error) {
 	if err := copyTree(h.Path, dst); err != nil {
 		return "", err
 	}
+	if err := ownLike(dst, c.cfg.RescueDir); err != nil {
+		return "", err
+	}
 	return dst, nil
+}
+
+func ownLike(dst, ref string) error {
+	st, err := os.Stat(ref)
+	if err != nil {
+		return err
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	uid, gid := int(sys.Uid), int(sys.Gid)
+	return filepath.WalkDir(dst, func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Lchown(path, uid, gid)
+	})
 }
 
 // SealedLog opens the sealed boot and session log of the computer with the

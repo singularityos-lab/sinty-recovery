@@ -2,6 +2,6 @@ module github.com/singularityos-lab/sinty-recovery
 
 go 1.26
 
-require github.com/mirkobrombin/atomloops v0.2.10-0.20261120084945-5a2b7287fc89
+require github.com/mirkobrombin/atomloops v0.2.10-0.20261120103649-2619c5b79414
 
 require github.com/mirkobrombin/go-foundation v1.1.1 // indirect
